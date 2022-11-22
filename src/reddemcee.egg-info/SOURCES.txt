@@ -1,0 +1,13 @@
+LICENSE
+MANIFEST.in
+README.md
+pyproject.toml
+setup.py
+src/reddemcee/__init__.py
+src/reddemcee/reddemcee.py
+src/reddemcee/reddwrappers.py
+src/reddemcee.egg-info/PKG-INFO
+src/reddemcee.egg-info/SOURCES.txt
+src/reddemcee.egg-info/dependency_links.txt
+src/reddemcee.egg-info/requires.txt
+src/reddemcee.egg-info/top_level.txt

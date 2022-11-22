@@ -1,0 +1,5 @@
+numpy
+matplotlib>=3.5.1
+emcee
+tqdm
+pandas
