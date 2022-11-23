@@ -11,7 +11,7 @@ setuptools.setup(
     version="0.3.0",
     author="ReddTea",
     author_email="redd@tea.com",
-    description="A Parallel Tempering wrapper for emcee 3 for personal use",
+    description="An Adaptative Parallel Tempering wrapper for emcee 3 for personal use",
     long_description=long_description,
     long_description_content_type="text/markdown",
     #url="https://github.com/pypa/sampleproject",
