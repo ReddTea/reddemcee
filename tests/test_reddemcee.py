@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import scipy as sp
-
 try:
     pass
 except ImportError:
