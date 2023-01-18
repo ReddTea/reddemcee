@@ -1,18 +1,22 @@
 # @auto-fold regex /^\s*if/ /^\s*else/ /^\s*def/
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# version 0.3.2
+# date 17 jan 2023
 
-# version 0.3
-# date 14 nov 2022
+__version__ = '0.3.3'
+__name__ = 'reddemcee'
+__all__ = ['PTSampler']
+
 import numpy as np
 import emcee
+from emcee.utils import deprecation_warning
+
 from tqdm import tqdm
 
 from typing import Dict, List, Optional, Union
 
 from .reddwrappers import PTWrapper
-
-__version__ = "0.3.0"
 
 temp_table = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,
                       2.71225, 2.49879, 2.34226, 2.22198, 2.12628,
@@ -48,49 +52,36 @@ def set_temp_ladder(ntemps, ndims, temp_table=temp_table):
     else:
         tstep = temp_table[ndims-1]
 
-    temp_ladder = np.exp(np.linspace(0, -(ntemps-1)*np.log(tstep), ntemps))
-    return temp_ladder
+    return np.exp(np.linspace(0, -(ntemps-1)*np.log(tstep), ntemps))
 
 
 class PTSampler(object):
-    def __init__(self,
-        nwalkers,
-        ndim, #log_probabilityt,#log_prior_fn, log_likelihood_fn,
-        log_likelihood_fn,
-        log_prior_fn,
-        pool=None,
-        moves=None,
-        logl_args=[], logl_kwargs={},
-        logp_args=[], logp_kwargs={},
-        ntemps=None, betas=None, nsweeps=None,
-        backend=None,
-        vectorize=False,
-        blobs_dtype=None,
-        parameter_names: Optional[Union[Dict[str, int], List[str]]] = None,
-        # Deprecated...
-        a=None, postargs=None, threads=None, live_dangerously=None, runtime_sortingfn=None):
-
+    def __init__(self, nwalkers, ndim, log_likelihood_fn, log_prior_fn, pool=None, moves=None, backend=None, vectorize=False, blobs_dtype=None, parameter_names: Optional[Union[Dict[str, int], List[str]]] = None, logl_args=None, logl_kwargs=None, logp_args=None, logp_kwargs=None, ntemps=None, betas=None, adaptative=True, a=None, postargs=None, threads=None, live_dangerously=None, runtime_sortingfn=None):
+        # nsweeps = None  # ? should add this?
+        if logl_args is None:
+            logl_args = []
+        if logl_kwargs is None:
+            logl_kwargs = {}
+        if logp_args is None:
+            logp_args = []
+        if logp_kwargs is None:
+            logp_kwargs = {}
         ######################################################
         # Warn about deprecated arguments
-        if True:
-            deprecated_args = [postargs, threads, runtime_sortingfn, live_dangerously]
-            deprecated_args_str = ['postargs', 'threads', 'runtime_sortingfn', 'live_dangerously']
+        deprecated_args = [postargs, threads, runtime_sortingfn, live_dangerously]
+        deprecated_args_str = ['postargs', 'threads', 'runtime_sortingfn', 'live_dangerously']
 
-            if a is not None:
-                deprecation_warning("The 'a' argument is deprecated, use 'moves' instead")
-            for i in range(len(deprecated_args)):
-                if deprecated_args[i] is not None:
-                    deprecation_warning("The '%s' argument is deprecated" %deprecated_args_str[i])
+        if a is not None:
+            deprecation_warning("The 'a' argument is deprecated, use 'moves' instead")
+        for i in range(len(deprecated_args)):
+            if deprecated_args[i] is not None:
+                deprecation_warning(f"The '{deprecated_args_str[i]}' argument is deprecated")
         ######################################################
         # Parse the move schedule
 
-        #
         # beta ladder
         if ntemps:
-            if betas:
-                self.betas = betas
-            else:
-                self.betas = set_temp_ladder(ntemps, ndim)
+            self.betas = betas or set_temp_ladder(ntemps, ndim)
         else:
             ntemps = 5
             self.betas = set_temp_ladder(ntemps, ndim)
@@ -112,28 +103,21 @@ class PTSampler(object):
         self.blobs_dtype = blobs_dtype
         self.moves = moves
         self.backend = backend
+        self.ratios = None
 
         if self.vectorize is False:
             self.vectorize = [False for _ in range(self.ntemps)]
 
         if self.moves is None:
             self.moves = [None for _ in range(self.ntemps)]
-        else:
-            pass
         if self.blobs_dtype is None:
             self.blobs_dtype = [None for _ in range(self.ntemps)]
         if self.backend is None:
             self.backend = [None for _ in range(self.ntemps)]
 
-
-        # sampler
-        #self.sampler = [emcee.EnsembleSampler(nwalkers, ndim, log_probabilityt, args=[self.betas[t]]) for t in range(ntemps)]
-        ### redo this
-
         self.my_probs_fn = [] #list of functions
 
-        #
-        self.adaptative = True
+        self.adaptative = adaptative
         self.config_adaptation_lag = 10000
         self.config_adaptation_time = 100
 
@@ -145,36 +129,40 @@ class PTSampler(object):
         # Check the backend shape
         #########
         # NAMED PARAMETERS?
-        for b in self.betas:
-            self.my_probs_fn.append(PTWrapper(self.ll_, self.lp_, b, loglargs=self.ll_args_,
-                                              logpargs=self.lp_args_, loglkwargs={},
-                                              logpkwargs={}))
-
+        self.my_probs_fn.extend(
+            PTWrapper(
+                self.ll_,
+                self.lp_,
+                b,
+                loglargs=self.ll_args_,
+                logpargs=self.lp_args_,
+                loglkwargs={},
+                logpkwargs={},
+            )
+            for b in self.betas
+        )
         self.sampler = [emcee.EnsembleSampler(self.nwalkers, self.ndim,
                         self.my_probs_fn[t], pool=self.pool,
                         moves=self.moves[t], backend=self.backend[t],
                         vectorize=self.vectorize[t], blobs_dtype=self.blobs_dtype[t],
                         ) for t in range(self.ntemps)]
-        #self.sampler = [emcee.EnsembleSampler(self.nwalkers, ndim, lambda x, b=b: (self.lp_(x) + self.ll_(x)*b, self.ll_(x))) for b in self.betas]
-
-        #####################################################
-        self.__previous_state = [self.sampler[t]._previous_state for t in range(self.ntemps)]
 
     def __str__(self):
         return 'My sampler, ntemps = %i' % self.ntemps
+
 
     def __getitem__(self, n):
         return self.sampler[n]
 
 
+    def __setitem__(self, n, thing):
+        self.sampler[n] = thing
+
+
     def sample(
         self,
         initial_state,
-        log_prob0=None,  # Deprecated
-        rstate0=None,  # Deprecated
-        blobs0=None,  # Deprecated
         iterations=1,
-        nsweeps=None,
         tune=False,
         skip_initial_state_check=False,
         thin_by=1,
@@ -196,12 +184,10 @@ class PTSampler(object):
                                                progress_kwargs=progress_kwargs):
                pass
 
-        #dbeta = [self.betas[t-1] - self.betas[t] for t in range(9, 0, -1)]
 
         self.temp_swaps_()
         if self.adaptative:
             self.ladder_adjustment()
-            pass
 
 
         yield self.samp
@@ -222,23 +208,12 @@ class PTSampler(object):
 
             asel = paccept > raccept
 
-            #self.swap_rate[t, n] = np.mean(asel)
-            #self.n_swap_accept[t] += nacc
             self.n_swap_accept[t-1] = np.sum(asel)
 
-
-            #atris = ['coords', 'log_prob']
-            #atris = ['coords[asel]']
-            #for x in atris:
-            #    setattr(self.samp[t], x)
-
             self.samp[t].coords[asel], self.samp[t-1].coords[asel] = self.samp[t-1].coords[asel], self.samp[t].coords[asel]
-
             self.samp[t].log_prob[asel], self.samp[t-1].log_prob[asel] = self.samp[t-1].log_prob[asel] - dbeta*ll2[asel], self.samp[t].log_prob[asel] + dbeta*ll1[asel]
-
             self.samp[t].blobs[asel], self.samp[t-1].blobs[asel] = self.samp[t-1].blobs[asel], self.samp[t].blobs[asel]
         self.ratios = self.n_swap_accept / self.nwalkers
-        pass
 
 
     def ladder_adjustment(self):
@@ -268,10 +243,31 @@ class PTSampler(object):
         for t in range(self.ntemps):
             self.my_probs_fn[t].beta = self.betas[t]
 
-        pass
+
+    def thermodynamic_integration(self):
+        logls = np.mean(self.get_func('get_log_prob', kwargs={'flat':True}), axis=1)
+
+        if self.betas[-1] != 0:
+            betas1 = np.concatenate((self.betas, [0]))
+            betas2 = np.concatenate((self.betas[::2], [0]))
+
+            logls1 = np.concatenate((logls, [logls[-1]]))
+            logls2 = np.concatenate((logls[::2], [logls[-1]]))
+
+        else:
+            betas1 = self.betas
+            betas2 = np.concatenate((self.betas[:-1:2], [0]))
+
+            logls1 = logls
+            logls2 = np.concatenate((logls1[:-1:2], [logls1[-1]]))
+
+        logZ1 = -np.trapz(logls1, betas1)
+        logZ2 = -np.trapz(logls2, betas2)
+
+        return logZ1, np.abs(logZ1 - logZ2)
 
 
-    def run_mcmc(self, initial_state, nsteps, **kwargs):
+    def run_mcmc(self, initial_state, nsteps, progress=True):
         if initial_state is None:
             print('Initial state is none')
             if self.__previous_state[0] is None:
@@ -279,7 +275,6 @@ class PTSampler(object):
                     "Cannot have `initial_state=None` if run_mcmc has never "
                     "been called.")
             initial_state = self.__previous_state
-            pass
 
         self.sampler = [emcee.EnsembleSampler(self.nwalkers, self.ndim,
                         self.my_probs_fn[t], pool=self.pool,
@@ -288,11 +283,9 @@ class PTSampler(object):
                         ) for t in range(self.ntemps)]
 
         results = None
-        nsweeps = nsteps
-        pbar = tqdm(total=nsweeps)
-        for n in range(nsteps):
+        pbar = tqdm(total=nsteps, disable=not progress)
+        for _ in range(nsteps):
             for results in self.sample(initial_state):
-                pass
                 pbar.update(1)
 
         pbar.close()
@@ -302,6 +295,12 @@ class PTSampler(object):
 
     def get_attr(self, x):
         return [getattr(sampler_instance, x) for sampler_instance in self]
+
+
+    def get_func(self, x, kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+        return [getattr(sampler_instance, x)(**kwargs) for sampler_instance in self]
 
 
     pass
