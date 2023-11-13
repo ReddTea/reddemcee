@@ -1,8 +1,6 @@
 # @auto-fold regex /^\s*if/ /^\s*else/ /^\s*def/
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# version 0.3.3
-# date 17 jan 2023
 
 # my coding convention
 # **EVAL : evaluate the performance of this method

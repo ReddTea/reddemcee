@@ -1,10 +1,8 @@
 # @auto-fold regex /^\s*if/ /^\s*else/ /^\s*def/
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# version 0.3.2
-# date 17 jan 2023
 
-__version__ = '0.3.3'
+__version__ = '0.4.0'
 __name__ = 'reddemcee'
 __all__ = ['PTSampler']
 
@@ -46,11 +44,11 @@ dmax = temp_table.shape[0]
 def set_temp_ladder(ntemps, ndims, temp_table=temp_table):
     # returns betas
     dmax = temp_table.shape[0]
+
+    tstep = temp_table[ndims-1]
     if ndims > dmax:
         # An approximation to the temperature step at large dimension
         tstep = 1.0 + 2.0*np.sqrt(np.log(4.0))/np.sqrt(ndims)
-    else:
-        tstep = temp_table[ndims-1]
 
     return np.exp(np.linspace(0, -(ntemps-1)*np.log(tstep), ntemps))
 
@@ -121,7 +119,7 @@ class PTSampler(object):
         self.config_adaptation_lag = 10000
         self.config_adaptation_time = 100
 
-
+        self.nglobal = 0
         ## BACKEND
         #self.backend = Backend() if backend is None else backend
 
@@ -146,6 +144,7 @@ class PTSampler(object):
                         moves=self.moves[t], backend=self.backend[t],
                         vectorize=self.vectorize[t], blobs_dtype=self.blobs_dtype[t],
                         ) for t in range(self.ntemps)]
+
 
     def __str__(self):
         return 'My sampler, ntemps = %i' % self.ntemps
@@ -174,7 +173,7 @@ class PTSampler(object):
         self.samp = initial_state
         for t in range(self.ntemps):
             for self.samp[t] in self[t].sample(self.samp[t],
-                                               iterations=iterations,
+                                               iterations=1,
                                                tune=tune,
                                                skip_initial_state_check=skip_initial_state_check,
                                                thin_by=thin_by,
@@ -182,13 +181,18 @@ class PTSampler(object):
                                                store=store,
                                                progress=progress,
                                                progress_kwargs=progress_kwargs):
-               pass
+                pass
 
 
         self.temp_swaps_()
         if self.adaptative:
-            self.ladder_adjustment()
+            dbetas = self.ladder_adjustment()
+            self.betas += dbetas
 
+            # Mutate my_probs_fn
+            for t in range(self.ntemps-1, 0, -1):
+                self.my_probs_fn[t].beta = self.betas[t]
+                self.samp[t].log_prob += self.samp[t].blobs * dbetas[t]
 
         yield self.samp
 
@@ -200,8 +204,8 @@ class PTSampler(object):
             #iperm = np.ones(self.nwalkers, int)
             #i1perm = np.ones(self.nwalkers, int)
 
-            ll1 = self.samp[t].blobs
-            ll2 = self.samp[t-1].blobs
+            ll1 = self.samp[t].blobs  # hot
+            ll2 = self.samp[t-1].blobs  # cold
 
             raccept = np.log(np.random.uniform(0, 1, self.nwalkers))
             paccept = dbeta * (ll1 - ll2)
@@ -212,7 +216,8 @@ class PTSampler(object):
 
             self.samp[t].coords[asel], self.samp[t-1].coords[asel] = self.samp[t-1].coords[asel], self.samp[t].coords[asel]
             self.samp[t].log_prob[asel], self.samp[t-1].log_prob[asel] = self.samp[t-1].log_prob[asel] - dbeta*ll2[asel], self.samp[t].log_prob[asel] + dbeta*ll1[asel]
-            self.samp[t].blobs[asel], self.samp[t-1].blobs[asel] = self.samp[t-1].blobs[asel], self.samp[t].blobs[asel]
+            self.samp[t].blobs[asel], self.samp[t-1].blobs[asel] = ll2[asel], ll1[asel]
+
         self.ratios = self.n_swap_accept / self.nwalkers
 
 
@@ -237,15 +242,18 @@ class PTSampler(object):
         deltaTs *= np.exp(dSs)
         betas[1:-1] = 1 / (np.cumsum(deltaTs) + 1 / betas[0])
 
+        return betas - self.betas
         # Mutate Ladder
-        self.betas = betas
+        #self.betas = betas
         # Mutate my_probs_fn
-        for t in range(self.ntemps):
-            self.my_probs_fn[t].beta = self.betas[t]
+        #for t in range(self.ntemps):
+        #    self.my_probs_fn[t].beta = self.betas[t]
 
 
-    def thermodynamic_integration(self):
-        logls = np.mean(self.get_func('get_log_prob', kwargs={'flat':True}), axis=1)
+    def thermodynamic_integration(self, discard=1, coef=3):
+        sampler_dict = {'flat':False, 'discard':discard}
+        logls0 = self.get_func('get_blobs', kwargs=sampler_dict)
+        logls = self.get_mean_logls(logls0, coef=coef)
 
         if self.betas[-1] != 0:
             betas1 = np.concatenate((self.betas, [0]))
@@ -267,7 +275,18 @@ class PTSampler(object):
         return logZ1, np.abs(logZ1 - logZ2)
 
 
-    def run_mcmc(self, initial_state, nsteps, progress=True):
+    def get_mean_logls(self, logls, coef=3):
+        ll0 = np.array([])
+        for i in range(self.ntemps):
+            loglrow = logls[i]
+            mask = (np.mean(loglrow) + coef*np.std(loglrow) > loglrow) & (loglrow > np.mean(loglrow) - coef*np.std(loglrow))
+            loglrow0 = np.mean(loglrow[mask])
+            ll0 = np.append(ll0, loglrow0)
+
+        return ll0
+
+
+    def run_mcmc(self, initial_state, nsteps, iterations=1, progress=True):
         if initial_state is None:
             print('Initial state is none')
             if self.__previous_state[0] is None:
@@ -285,7 +304,7 @@ class PTSampler(object):
         results = None
         pbar = tqdm(total=nsteps, disable=not progress)
         for _ in range(nsteps):
-            for results in self.sample(initial_state):
+            for results in self.sample(initial_state, iterations=iterations):
                 pbar.update(1)
 
         pbar.close()
