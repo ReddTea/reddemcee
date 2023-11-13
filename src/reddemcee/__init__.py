@@ -2,8 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '0.4.1'
-__name__ = 'reddemcee'
+__version__ = '0.4.2'
 __all__ = ['PTSampler']
 
 import numpy as np
@@ -54,16 +53,19 @@ def set_temp_ladder(ntemps, ndims, temp_table=temp_table):
 
 
 class PTSampler(object):
-    def __init__(self, nwalkers, ndim, log_likelihood_fn, log_prior_fn, pool=None, moves=None, backend=None, vectorize=False, blobs_dtype=None, parameter_names: Optional[Union[Dict[str, int], List[str]]] = None, logl_args=None, logl_kwargs=None, logp_args=None, logp_kwargs=None, ntemps=None, betas=None, adaptative=True, a=None, postargs=None, threads=None, live_dangerously=None, runtime_sortingfn=None):
-        # nsweeps = None  # ? should add this?
-        if logl_args is None:
-            logl_args = []
-        if logl_kwargs is None:
-            logl_kwargs = {}
-        if logp_args is None:
-            logp_args = []
-        if logp_kwargs is None:
-            logp_kwargs = {}
+    def __init__(self, nwalkers, ndim, log_likelihood_fn, log_prior_fn,
+                 pool=None, moves=None, backend=None, vectorize=False,
+                 blobs_dtype=None, parameter_names=None, logl_args=None,
+                 logl_kwargs=None, logp_args=None, logp_kwargs=None,
+                 ntemps=None, betas=None, adaptative=True, a=None,
+                 postargs=None, threads=None, live_dangerously=None,
+                 runtime_sortingfn=None):
+        # Default arguments
+        logl_args = logl_args or []
+        logp_args = logp_args or []
+        logl_kwargs = logl_kwargs or {}
+        logp_kwargs = logp_kwargs or {}
+
         ######################################################
         # Warn about deprecated arguments
         deprecated_args = [postargs, threads, runtime_sortingfn, live_dangerously]
@@ -77,15 +79,11 @@ class PTSampler(object):
         ######################################################
         # Parse the move schedule
 
-        # beta ladder
-        if ntemps:
-            self.betas = betas or set_temp_ladder(ntemps, ndim)
-        else:
-            ntemps = 5
-            self.betas = set_temp_ladder(ntemps, ndim)
-        self.ntemps = ntemps
+        # Beta ladder initialization
+        self.ntemps = ntemps or 5
+        self.betas = betas or set_temp_ladder(self.ntemps, ndim)
         #####################################################
-        # Name things
+        # Initialize instance variables
         self.nwalkers = nwalkers
         self.ndim = ndim
         self.lp_ = log_prior_fn
@@ -97,48 +95,30 @@ class PTSampler(object):
         self.n_swap_accept = np.zeros(ntemps-1)
 
         self.pool = pool
-        self.vectorize = vectorize
-        self.blobs_dtype = blobs_dtype
-        self.moves = moves
-        self.backend = backend
-        self.ratios = None
-
-        if self.vectorize is False:
-            self.vectorize = [False for _ in range(self.ntemps)]
-
-        if self.moves is None:
-            self.moves = [None for _ in range(self.ntemps)]
-        if self.blobs_dtype is None:
-            self.blobs_dtype = [None for _ in range(self.ntemps)]
-        if self.backend is None:
-            self.backend = [None for _ in range(self.ntemps)]
-
-        self.my_probs_fn = [] #list of functions
-
         self.adaptative = adaptative
         self.config_adaptation_lag = 10000
         self.config_adaptation_time = 100
-
         self.nglobal = 0
+
+        # Default values for lists
+        default_list = lambda lst, size, default: [default for _ in range(size)] if lst is None else lst
+        self.vectorize = default_list(vectorize, self.ntemps, False)
+        self.moves = default_list(moves, self.ntemps, None)
+        self.blobs_dtype = default_list(blobs_dtype, self.ntemps, None)
+        self.backend = default_list(backend, self.ntemps, None)
+
+        self.ratios = None
+
         ## BACKEND
         #self.backend = Backend() if backend is None else backend
-
         # Deal with re-used backends
         # Check the backend shape
         #########
-        # NAMED PARAMETERS?
-        self.my_probs_fn.extend(
-            PTWrapper(
-                self.ll_,
-                self.lp_,
-                b,
-                loglargs=self.ll_args_,
-                logpargs=self.lp_args_,
-                loglkwargs={},
-                logpkwargs={},
-            )
-            for b in self.betas
-        )
+        # Probability function wrappers
+        self.my_probs_fn = [PTWrapper(self.ll_, self.lp_, b, loglargs=self.ll_args_,
+                                  logpargs=self.lp_args_, loglkwargs={},
+                                  logpkwargs={}) for b in self.betas]
+
         self.sampler = [emcee.EnsembleSampler(self.nwalkers, self.ndim,
                         self.my_probs_fn[t], pool=self.pool,
                         moves=self.moves[t], backend=self.backend[t],
