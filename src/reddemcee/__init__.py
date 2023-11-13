@@ -173,7 +173,7 @@ class PTSampler(object):
         self.samp = initial_state
         for t in range(self.ntemps):
             for self.samp[t] in self[t].sample(self.samp[t],
-                                               iterations=1,
+                                               iterations=iterations,
                                                tune=tune,
                                                skip_initial_state_check=skip_initial_state_check,
                                                thin_by=thin_by,
@@ -302,7 +302,7 @@ class PTSampler(object):
                         ) for t in range(self.ntemps)]
 
         results = None
-        pbar = tqdm(total=nsteps, disable=not progress)
+        pbar = tqdm(total=nsteps*iterations, disable=not progress)
         for _ in range(nsteps):
             for results in self.sample(initial_state, iterations=iterations):
                 pbar.update(1)
