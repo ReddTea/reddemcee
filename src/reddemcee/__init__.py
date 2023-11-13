@@ -305,7 +305,7 @@ class PTSampler(object):
         pbar = tqdm(total=nsteps*iterations, disable=not progress)
         for _ in range(nsteps):
             for results in self.sample(initial_state, iterations=iterations):
-                pbar.update(1)
+                pbar.update(iterations)
 
         pbar.close()
 
