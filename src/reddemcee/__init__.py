@@ -102,7 +102,7 @@ class PTSampler(object):
 
         # Default values for lists
         default_list = lambda lst, size, default: [default for _ in range(size)] if lst is None else lst
-        self.vectorize = default_list(vectorize, self.ntemps, False)
+        self.vectorize = [False for _ in range(self.ntemps)] if vectorize is False else vectorize
         self.moves = default_list(moves, self.ntemps, None)
         self.blobs_dtype = default_list(blobs_dtype, self.ntemps, None)
         self.backend = default_list(backend, self.ntemps, None)
