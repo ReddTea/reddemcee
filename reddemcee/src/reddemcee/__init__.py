@@ -59,7 +59,7 @@ class PTSampler(object):
                  logl_kwargs=None, logp_args=None, logp_kwargs=None,
                  ntemps=None, betas=None, adaptative=True, a=None,
                  postargs=None, threads=None, live_dangerously=None,
-                 runtime_sortingfn=None, decay=None):
+                 runtime_sortingfn=None):
         # Default arguments
         logl_args = logl_args or []
         logp_args = logp_args or []
@@ -96,7 +96,6 @@ class PTSampler(object):
 
         self.pool = pool
         self.adaptative = adaptative
-        self.decay = decay
         self.config_adaptation_halflife = 10000  # adaptations reduced by half at this time
         self.config_adaptation_rate = 100  # smaller, faster
         self.nglobal = 0
@@ -219,14 +218,6 @@ class PTSampler(object):
 
         # Modulate temperature adjustments with a hyperbolic decay.
         decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
-        if self.decay is None:
-            pass
-        elif self.decay == 1:
-            decay = decay / (np.std(self.config_adaptation_rate)+1)
-        elif self.decay == 2:
-            decay = decay / np.exp(-np.std(self.config_adaptation_rate))
-        else:
-            print('DECAY ERROR')
 
         kappa = decay / self.config_adaptation_rate
 
@@ -246,8 +237,9 @@ class PTSampler(object):
         #    self.my_probs_fn[t].beta = self.betas[t]
 
 
-    def thermodynamic_integration(self, coef=3, sampler_dict = {'flat':False, 'discard':10}):
-        
+    def thermodynamic_integration(self, coef=3, sampler_dict=None):
+        if sampler_dict is None:
+            sampler_dict = {'flat':False, 'discard':10}
         logls0 = self.get_func('get_blobs', kwargs=sampler_dict)
         logls = self.get_mean_logls(logls0, coef=coef)
 
@@ -336,23 +328,19 @@ class PTSampler(object):
 
 
     def get_Z(self, discard=1, coef=3, largo=100):
-        if True:
-            sampler_dict={'flat':True, 'discard':discard}
-            logl_r = np.array(self.get_func('get_blobs', kwargs=sampler_dict))
+        sampler_dict={'flat':True, 'discard':discard}
+        logl_r = np.array(self.get_func('get_blobs', kwargs=sampler_dict))
 
-            chunks = self.extract_chunks(logl_r, chunk_size=largo)
+        chunks = self.extract_chunks(logl_r, chunk_size=largo)
 
-            zz_ = []
-            zze_ = []
-            for subset in chunks:
-                logls = self.get_mean_logls(subset, coef=coef)
-                
-                z, zerr = self.hand_calc_z(logls)
-                zz_.append(z)
-                zze_.append(zerr)
-        if False:
-            print('Try larger sample')
-            return [0], [0]
+        zz_ = []
+        zze_ = []
+        for subset in chunks:
+            logls = self.get_mean_logls(subset, coef=coef)
+
+            z, zerr = self.hand_calc_z(logls)
+            zz_.append(z)
+            zze_.append(zerr)
         return zz_, zze_
 
 
