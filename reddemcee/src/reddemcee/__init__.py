@@ -59,7 +59,7 @@ class PTSampler(object):
                  logl_kwargs=None, logp_args=None, logp_kwargs=None,
                  ntemps=None, betas=None, adaptative=True, a=None,
                  postargs=None, threads=None, live_dangerously=None,
-                 runtime_sortingfn=None, decay=None):
+                 runtime_sortingfn=None):
         # Default arguments
         logl_args = logl_args or []
         logp_args = logp_args or []
@@ -219,15 +219,6 @@ class PTSampler(object):
 
         # Modulate temperature adjustments with a hyperbolic decay.
         decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
-        if self.decay is None:
-            pass
-        elif self.decay == 1:
-            decay = decay / (np.std(self.config_adaptation_rate)+1)
-        elif self.decay == 2:
-            decay = decay / np.exp(-np.std(self.config_adaptation_rate))
-        else:
-            print('DECAY ERROR')
-
         kappa = decay / self.config_adaptation_rate
 
         # Construct temperature adjustments.
