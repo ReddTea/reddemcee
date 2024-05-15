@@ -44,7 +44,40 @@ ndim, nwalkers = 5, 100
 ntemps = 5
 ivar = 1. / np.random.rand(ndim)
 p0 = list(np.random.randn(10, nwalkers, ndim))
-
-sampler = reddemcee.PTSampler(nwalkers, ndim, log_like, log_prior, logl_args=[ivar])
+sampler = reddemcee.PTSampler(nwalkers,
+                             ndim,
+                             log_like,
+                             log_prior,
+                             ntemps=ntemps,
+                             adaptative=True,
+                             logl_args=[ivar],
+                             )
 sampler.run_mcmc(p0, 2000)
 ```
+
+# Additional Options
+
+ntemps
+betas
+pool
+adaptative
+config_adaptation_halflife rn: adaptations reduced by half at this time
+config_adaptation_rate     rn: smaller, faster
+moves
+backend
+
+## Stored
+ratios
+betas_history
+betas_history_bool
+ratios_history
+
+## Funcs
+thermodynamic_integration(self,
+                          coef=3,
+                          sampler_dict = {'flat':False,
+                                          'discard':10})
+
+get_Z(discard=1, coef=3, largo=100)
+get_attr(x)
+get_func(x)

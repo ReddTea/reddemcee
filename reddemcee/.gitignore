@@ -12,3 +12,6 @@ reddemcee.egg-info
 
 # Ignore SASS config files
 .sass-cache
+
+# Ignore Private files
+Private
