@@ -1,5 +1,5 @@
 # Ignore Mac system files
-.DS_store
+.DS_Store
 
 # Ignore pip dist folder
 dist
@@ -15,3 +15,5 @@ reddemcee.egg-info
 
 # Ignore Private files
 Private
+
+exclude __pycache__

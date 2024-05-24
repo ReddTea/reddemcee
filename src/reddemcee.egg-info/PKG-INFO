@@ -70,7 +70,8 @@ sampler = reddemcee.PTSampler(nwalkers,
                              adaptative=True,
                              logl_args=[ivar],
                              )
-sampler.run_mcmc(p0, 2000)
+                             
+sampler.run_mcmc(p0, 100, 2)  # starting pos, nsweeps, nsteps
 ```
 
 # Additional Options
