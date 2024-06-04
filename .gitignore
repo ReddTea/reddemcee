@@ -16,4 +16,4 @@ reddemcee.egg-info
 # Ignore Private files
 Private
 
-exclude __pycache__
+__pycache__
