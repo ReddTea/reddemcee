@@ -82,7 +82,6 @@ class PTSampler(object):
         # Beta ladder initialization
         self.ntemps = ntemps or 5
         self.betas = betas if betas is not None else set_temp_ladder(self.ntemps, ndim)
-        self.betas = betas if betas is not None else set_temp_ladder(self.ntemps, ndim)
         #####################################################
         # Initialize instance variables
         self.nwalkers = nwalkers
@@ -97,8 +96,6 @@ class PTSampler(object):
 
         self.pool = pool
         self.adaptative = adaptative
-        self.config_adaptation_halflife = 10000  # adaptations reduced by half at this time
-        self.config_adaptation_rate = 100  # smaller, faster
         self.config_adaptation_halflife = 10000  # adaptations reduced by half at this time
         self.config_adaptation_rate = 100  # smaller, faster
         self.nglobal = 0
@@ -134,16 +131,15 @@ class PTSampler(object):
 
 
     def sample(self,
-    def sample(self,
-        initial_state,
-        iterations=1,
-        tune=False,
-        skip_initial_state_check=False,
-        thin_by=1,
-        thin=None,
-        store=True,
-        progress=False,
-        progress_kwargs=None):
+               initial_state,
+               iterations=1,
+               tune=False,
+               skip_initial_state_check=False,
+               thin_by=1,
+               thin=None,
+               store=True,
+               progress=False,
+               progress_kwargs=None):
 
         self.samp = initial_state
         for t in range(self.ntemps):
@@ -158,9 +154,7 @@ class PTSampler(object):
                                                progress_kwargs=progress_kwargs):
                 pass
 
-        if self.betas_history_bool:
-            for ti in range(self.ntemps):
-                self.betas_history[ti].extend(np.ones(iterations) * self.betas[ti])
+
         if self.betas_history_bool:
             for ti in range(self.ntemps):
                 self.betas_history[ti].extend(np.ones(iterations) * self.betas[ti])
@@ -198,10 +192,7 @@ class PTSampler(object):
             self.samp[t].log_prob[asel], self.samp[t-1].log_prob[asel] = self.samp[t-1].log_prob[asel] - dbeta*ll2[asel], self.samp[t].log_prob[asel] + dbeta*ll1[asel]
             self.samp[t].blobs[asel], self.samp[t-1].blobs[asel] = ll2[asel], ll1[asel]
             
-            
         self.ratios = self.n_swap_accept / self.nwalkers
-        self.ratios_history = np.append(self.ratios_history, self.ratios)
-        
         self.ratios_history = np.append(self.ratios_history, self.ratios)
         
 
@@ -215,9 +206,6 @@ class PTSampler(object):
         time = self[0].iteration
 
         # Modulate temperature adjustments with a hyperbolic decay.
-        decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
-
-        kappa = decay / self.config_adaptation_rate
         decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
 
         kappa = decay / self.config_adaptation_rate
@@ -238,9 +226,6 @@ class PTSampler(object):
         #    self.my_probs_fn[t].beta = self.betas[t]
 
 
-    def thermodynamic_integration(self, coef=3, sampler_dict=None):
-        if sampler_dict is None:
-            sampler_dict = {'flat':False, 'discard':10}
     def thermodynamic_integration(self, coef=3, sampler_dict=None):
         if sampler_dict is None:
             sampler_dict = {'flat':False, 'discard':10}
@@ -348,87 +333,6 @@ class PTSampler(object):
         return zz_, zze_
 
 
-    def hand_calc_z(self, logls):
-        betas = self.betas.copy()
-        order = np.argsort(betas)[::-1]
-        betas = betas[order]
-        logls0 = logls[order]
-        
-        if betas[-1] != 0:
-            betas1 = np.concatenate((betas, [0]))
-            logls1 = np.concatenate((logls0, [logls0[-1]]))            
-        else:
-            betas1 = betas
-            logls1 = logls0
-
-        # MANUAL INTEGRATION 3, INTERPOLATED
-        # INTERPOLATION
-        x0 = betas1
-        y0 = logls1
-        
-        index = 0
-        for i in range(len(y0)-1):
-            if y0[i]*y0[i+1] < 0:
-                index = i+1
-                m = (y0[i+1] - y0[i]) / (x0[i+1] - x0[i])
-                insertx = x0[i] - y0[i]/m
-                inserty = 0
-
-        if index:
-            y0 = np.insert(y0, index, inserty)
-            x0 = np.insert(x0, index, insertx)
-        
-        # INTEGRAL CALC
-        hand_Z = np.array([])
-        hand_Zerr = np.array([])
-        
-        for i in range(len(y0)-1):
-            xa, xb = x0[i], x0[i+1]
-            A, B = y0[i], y0[i+1]
-            
-            ctex = (xb-xa)
-            quad = A * ctex
-            tria = (B-A) * ctex / 2
-            suma = quad + tria
-            
-            hand_Z = np.append(hand_Z, suma)
-            hand_Zerr = np.append(hand_Zerr, tria)
-            
-        suma = np.sum(hand_Z)
-        suma_err = np.sqrt(np.sum(np.array(hand_Zerr)**2))
-
-        return -suma, suma_err
-
-
-    def extract_chunks(self, array, chunk_size=1000):
-        chunks = []
-        end_index = len(array[0])
-        while end_index > 0:
-            start_index = max(end_index - chunk_size, 0)  # Ensuring the start index is not negative
-            chunk = array[:, start_index:end_index]
-            if len(chunk) > 1:
-                chunks.append(chunk)
-                end_index = start_index  # Update the end_index for the next iteration
-        return chunks
-
-
-    def get_Z(self, discard=1, coef=3, largo=100):
-        sampler_dict={'flat':True, 'discard':discard}
-        logl_r = np.array(self.get_func('get_blobs', kwargs=sampler_dict))
-
-        chunks = self.extract_chunks(logl_r, chunk_size=largo)
-
-        zz_ = []
-        zze_ = []
-        for subset in chunks:
-            logls = self.get_mean_logls(subset, coef=coef)
-
-            z, zerr = self.hand_calc_z(logls)
-            zz_.append(z)
-            zze_.append(zerr)
-        return zz_, zze_
-
-
     def get_mean_logls(self, logls, coef=3):
         ll0 = np.array([])
         for i in range(self.ntemps):
@@ -440,7 +344,6 @@ class PTSampler(object):
         return ll0
 
 
-    def run_mcmc(self, initial_state, nsweeps, nsteps, progress=True):
     def run_mcmc(self, initial_state, nsweeps, nsteps, progress=True):
         if initial_state is None:
             print('Initial state is none')
@@ -457,10 +360,6 @@ class PTSampler(object):
                         ) for t in range(self.ntemps)]
 
         results = None
-        pbar = tqdm(total=nsteps*nsweeps, disable=not progress)
-        for _ in range(nsweeps):
-            for results in self.sample(initial_state, iterations=nsteps):
-                pbar.update(nsteps)
         pbar = tqdm(total=nsteps*nsweeps, disable=not progress)
         for _ in range(nsweeps):
             for results in self.sample(initial_state, iterations=nsteps):
