@@ -8,7 +8,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="reddemcee",
-    version="0.6.0",
+    version="0.6.6",
     author="ReddTea",
     author_email="redd@tea.com",
     description="An Adaptative Parallel Tempering wrapper for emcee 3 for personal use",

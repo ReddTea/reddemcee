@@ -2,7 +2,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '0.6'
+__version__ = '0.6.6'
 __all__ = ['PTSampler']
 
 import numpy as np
@@ -98,6 +98,7 @@ class PTSampler(object):
         self.adaptative = adaptative
         self.config_adaptation_halflife = 10000  # adaptations reduced by half at this time
         self.config_adaptation_rate = 100  # smaller, faster
+        self.time0 = 0
         self.nglobal = 0
 
         # Default values for lists
@@ -130,28 +131,16 @@ class PTSampler(object):
         self.ratios_history = np.array([])
 
 
-    def __str__(self):
-        return 'My sampler, ntemps = %i' % self.ntemps
-
-
-    def __getitem__(self, n):
-        return self.sampler[n]
-
-
-    def __setitem__(self, n, thing):
-        self.sampler[n] = thing
-
-
     def sample(self,
-        initial_state,
-        iterations=1,
-        tune=False,
-        skip_initial_state_check=False,
-        thin_by=1,
-        thin=None,
-        store=True,
-        progress=False,
-        progress_kwargs=None):
+               initial_state,
+               iterations=1,
+               tune=False,
+               skip_initial_state_check=False,
+               thin_by=1,
+               thin=None,
+               store=True,
+               progress=False,
+               progress_kwargs=None):
 
         self.samp = initial_state
         for t in range(self.ntemps):
@@ -165,6 +154,7 @@ class PTSampler(object):
                                                progress=progress,
                                                progress_kwargs=progress_kwargs):
                 pass
+
 
         if self.betas_history_bool:
             for ti in range(self.ntemps):
@@ -214,7 +204,7 @@ class PTSampler(object):
         """
 
         betas = self.betas.copy()
-        time = self[0].iteration
+        time = self.time0 + self[0].iteration
 
         # Modulate temperature adjustments with a hyperbolic decay.
         decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
@@ -381,6 +371,17 @@ class PTSampler(object):
         return results
 
 
+    def reset(self):
+        self.time0 += self[0].iteration
+        
+        for s in self:
+            s.reset()
+
+        self.ratios = None
+        self.betas_history = [[] for _ in range(self.ntemps)]
+        self.ratios_history = np.array([])
+        
+
     def get_attr(self, x):
         return [getattr(sampler_instance, x) for sampler_instance in self]
 
@@ -389,6 +390,18 @@ class PTSampler(object):
         if kwargs is None:
             kwargs = {}
         return [getattr(sampler_instance, x)(**kwargs) for sampler_instance in self]
+
+
+    def __str__(self):
+        return 'My sampler, ntemps = %i' % self.ntemps
+
+
+    def __getitem__(self, n):
+        return self.sampler[n]
+
+
+    def __setitem__(self, n, thing):
+        self.sampler[n] = thing
 
 
     pass
