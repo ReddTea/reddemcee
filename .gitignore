@@ -16,6 +16,7 @@ MANIFEST
 
 # Ignore Private files
 Private
+tests
 
 # Ignore docs build
 site/

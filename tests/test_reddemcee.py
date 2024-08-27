@@ -52,7 +52,7 @@ if True:
     
 ntemps_ = 12
 nwalkers_ = 200
-setup = np.array([ntemps_, nwalkers_, 500, 2])
+setup = np.array([ntemps_, nwalkers_, 300, 2])
 
 if True:
 #with Pool(20) as mypool:
@@ -87,8 +87,7 @@ if True:
     print(f'Total time: {tot_time} sec')
 
 discard0 = 500
-z1 = sampler.thermodynamic_integration_classic(sampler_dict = {'flat':True,
-                                                          'discard':discard0})
+z1 = sampler.thermodynamic_integration_classic(discard=discard0)
 
 
 z2 = sampler.thermodynamic_integration(discard=discard0)
@@ -127,7 +126,7 @@ if True:
     if True:
         fig, ax = pl.subplots()
 
-        for ti in range(temps):
+        for ti in range(ntemps_):
             bet = bh1[ti]
             ax.plot(bet, np.ones_like(bet)*logls[ti], colors[ti])
             ax.plot(bet[-1], logls[ti], colors[ti]+'o')
