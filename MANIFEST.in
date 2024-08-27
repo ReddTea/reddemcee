@@ -1,3 +1,5 @@
 exclude Private/
 exclude .DS_Store
 exclude __pycache__
+exclude tests/
+exclude site/
