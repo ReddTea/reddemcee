@@ -1,0 +1,31 @@
+site_name: Reddemcee
+site_description: Adaptative Parallel Tempering wrapper for emcee.
+site_author: Pablo A. Pena
+
+#repo_url: https://github.com/ReddTea/reddemcee
+
+nav:
+  - Home: index.md
+  - User Guide: user-guide/README.md
+  - Tutorials:
+      - Introduction: tutorials/README.md
+      - Quickstart: tutorials/quickstart/quickstart.md
+      - Fitting a model: tutorials/fitting_model/fitting_model.md
+      - Temperatures & Adaptation: tutorials/temperatures/temperatures.md
+      - Evidence: tutorials/evidence/evidence.md
+      - Parallelization: tutorials/parallelization/parallelization.md
+      - Autocorrelation Analysis: tutorials/autocorrelation-analysis.md
+      - Moves: tutorials/moves.md
+
+theme:
+  name: readthedocs  # material  # readthedocs # mkdocs #
+  color_mode: auto
+  user_color_mode_toggle: true
+  nav_style: primary
+
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+plugins:
+  - search

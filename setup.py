@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# 26 aug 2024
 import setuptools
 
 with open("README.md", "r", encoding="utf-8") as fh:
@@ -8,7 +9,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="reddemcee",
-    version="0.6.6",
+    version="0.8",
     author="ReddTea",
     author_email="redd@tea.com",
     description="An Adaptative Parallel Tempering wrapper for emcee 3 for personal use",
@@ -22,6 +23,6 @@ setuptools.setup(
     packages=setuptools.find_packages(where="src"),
     package_dir={"": "src"},
     include_package_data=True,
-    install_requires=['numpy', 'matplotlib>=3.5.1', 'emcee>=3', 'tqdm', 'pandas'],
+    install_requires=['numpy', 'emcee>=3', 'tqdm'],
     python_requires=">=3.6",
 )

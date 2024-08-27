@@ -5,6 +5,7 @@ pyproject.toml
 setup.py
 src/reddemcee/__init__.py
 src/reddemcee/reddwrappers.py
+src/reddemcee/sampler.py
 src/reddemcee.egg-info/PKG-INFO
 src/reddemcee.egg-info/SOURCES.txt
 src/reddemcee.egg-info/dependency_links.txt

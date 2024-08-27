@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: reddemcee
-Version: 0.6.0
+Version: 0.6.6
 Summary: An Adaptative Parallel Tempering wrapper for emcee 3 for personal use
 Author: ReddTea
 Author-email: redd@tea.com

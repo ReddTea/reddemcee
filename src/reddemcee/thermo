@@ -1,0 +1,62 @@
+# @auto-fold regex /^\s*if/ /^\s*else/ /^\s*def/
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import numpy as np
+from scipy.stats import sem
+
+# SORT BETAS AND LOGLS
+# if beta=0 is present, all likelihoods there should be 1
+# if it is not, add it for calculating the integral
+
+x = sampr.betas[::-1]
+
+logls1 = logls0[::-1]
+hot_like = np.zeros_like(logls1[0])
+
+if x1[0] == 0:
+    logls1[0] = hot_like
+    y = np.mean(logls1, axis=1)
+
+else:
+    x = np.concatenate(([0], 1))
+    logls1 = [hot_like] + logls1
+    
+y = np.mean(logls1, axis=1)
+
+
+x1 = x
+y1 = y
+
+# CALCULATE ESS
+
+# CALCULATE AUTOCORRELATION TIME
+tau = np.array([integrated_time(sampr[i].get_blobs(discard=discard0),
+                c=5, tol=5, quiet=False) for i in range(K)]).flatten()[::-1]
+# CALCULATE EFFECTIVE SAMPLE SIZE
+
+n = np.array([len(l) for l in logls1])
+ESS = np.array([n/tau]).flatten()
+neff = n/tau
+
+# CALCULATE MOMENTS AND SEM
+
+d1 = np.diff(x1)
+#stdy = np.array([np.std(l) for l in logls1])/np.sqrt(n)  #np.std(logls1, axis=1, ddof=1)[::-1]/np.sqrt(n)
+stdyn = np.array([np.mean(l) for l in logls1])/np.sqrt(neff)# np.std(logls1, axis=1, ddof=1)[::-1]/np.sqrt(neff)
+#semy = np.array([sem(l) for l in logls1])# sem(logls1, axis=1)[::-1]
+vart = (stdyn[:-1]**2 + stdyn[1:]**2) * (d1/2)**2
+
+# VALUE
+ZF = np.trapz(y1, x1)# + mean_prior
+
+# DISCRETIZATION ERROR
+coso_mu = y1[:-2] - 2*y1[1:-1] + y1[2:]
+coso_be = d1[:-1] * d1[1:]
+coso_cu = d1[1:]**3
+
+err_disc = -1/12 * np.sum(coso_mu/coso_be*coso_cu)
+
+err_samp = np.sqrt(np.sum(vart))
+
+ZFERRn = np.sqrt(err_samp**2 + err_disc**2)

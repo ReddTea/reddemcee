@@ -13,7 +13,6 @@ fully compatible with emcee (v. 3.1.3).
 
 This code makes use of:
   - Numpy
-  - pandas
   - tqdm (https://pypi.python.org/pypi/tqdm)
   - emcee (https://github.com/dfm/emcee)
 
