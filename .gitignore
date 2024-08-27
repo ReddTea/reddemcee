@@ -21,7 +21,6 @@ tests/
 # Ignore docs build
 site/
 *.zip
-*.png
 
 
 __pycache__
