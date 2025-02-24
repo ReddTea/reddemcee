@@ -1,5 +1,5 @@
-exclude Private/
 exclude .DS_Store
-exclude __pycache__
+exclude Private/
 exclude tests/
 exclude site/
+exclude __pycache__

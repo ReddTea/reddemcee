@@ -83,7 +83,7 @@ def logprior(theta):
 ```python
 setup = [4, 100, 200, 2]
 ntemps, nwalkers, nsweeps, nsteps = setup
-p0 = list(np.random.uniform(limits_[0], limits_[1], [ntemps, nwalkers, ndim_]))
+p0 = np.random.uniform(limits_[0], limits_[1], [ntemps, nwalkers, ndim_])
 ```
 
 ```python

@@ -35,6 +35,21 @@ class LadderAdaptation(object):
         return kappa * adjust
     
     def select_adjustment(self, option=0):
+        """Select an adjustment method.
+        It tries to equalize the following:
+
+        0: Temperature Swap Rate
+
+        1: Swap Mean Distance
+
+        2: Specific Heat
+
+        3: dE/sig . Approximation propossed by...
+        
+
+        Args:
+            option (int): Selects the method.
+        """
         self.adjustment_fn = getattr(self, f'calc_adjust{option}')
 
     def calc_adjust0(self):
@@ -90,6 +105,32 @@ class PTSampler(LadderAdaptation):
         adapt_mode=0,
         parameter_names: Optional[Union[Dict[str, int], List[str]]] = None,
     ):
+        """Initialize the adaptive parallel tempering MCMC ensemble sampler
+
+        Args:
+            nwalkers (int): The number of walkers in each ensemble.
+            ndim (int): The number of dimensions in the parameter space.
+            log_like (callable): The log-likelihood function.
+            log_prior (callable): The log-prior function.
+            betas (Optional[Iterable[float]]): The inverse temperatures of the parallel chains.
+            ntemps (Optional[int]): The number of temperatures. If None, determined from betas.
+            pool (Optional[Pool]): A pool object for parallel processing.
+            moves (Optional[List[Move]]): A list of moves to use.
+            loglargs (Optional[tuple]): Positional arguments for the log-likelihood function.
+            loglkwargs (Optional[dict]): Keyword arguments for the log-likelihood function.
+            logpargs (Optional[tuple]): Positional arguments for the log-prior function.
+            logpkwargs (Optional[dict]): Keyword arguments for the log-prior function.
+            backend (Optional[Backend]): A backend object for storing the chain.
+            vectorize (Optional[bool]): Whether to vectorize the log-probability function.
+            blobs_dtype (Optional[dtype]): The dtype of the blobs.
+            smd_history (Optional[bool]): Whether to store swap mean distance history.
+            tsw_history (Optional[bool]): Whether to store temperature swap history.
+            adapt_tau (Optional[int]): Halflife of adaptation.
+            adapt_nu (Optional[int]): Adaptation rate.
+            adapt_mode (Optional[int]): Adaptation mode.
+            parameter_names (Optional[Union[Dict[str, int], List[str]]]): Parameter names.
+
+        """
         # Parse Move
         self._parse_moves(moves, tsw_history, smd_history)
         
@@ -218,7 +259,7 @@ class PTSampler(LadderAdaptation):
 
     def run_mcmc(self, initial_state, nsteps, nsweeps, **kwargs):
         """
-        Iterate :func:`sample` for ``nsteps`` iterations and return the result
+        Iterate :func:`sample` for ``nsweeps`` times ``nsteps`` iterations and return the result
 
         Args:
             initial_state: The initial state or position vector. Can also be
@@ -299,6 +340,18 @@ class PTSampler(LadderAdaptation):
 
 
     def thermodynamic_integration_classic(self, **kwargs):
+        """Compute the thermodynamic evidence integral using the classic method.
+
+        This method calculates the thermodynamic evidence integral using the classic
+        method, which involves averaging the log-likelihoods over the samples at different
+        temperatures.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to `get_log_like`.
+
+        Returns:
+            float: The thermodynamic evidence.
+        """        
         from .utils import thermodynamic_integration_classic
         logls0 = self.get_log_like(flat=True, **kwargs)
         logls = np.mean(logls0, axis=1)
@@ -307,6 +360,18 @@ class PTSampler(LadderAdaptation):
 
 
     def thermodynamic_integration(self, **kwargs):
+        """Compute the thermodynamic evidence integral.
+
+        This method calculates the thermodynamic evidence integral using numerical
+        integration of the average log-likelihood at different temperatures.
+        
+        Args:
+            **kwargs: Additional keyword arguments passed to `get_log_like`.
+
+        Returns:
+            float: The thermodynamic evidence.
+        """
+
         from .utils import thermodynamic_integration
         # Sort Betas And Logls
         x = self.betas[::-1]
@@ -323,29 +388,118 @@ class PTSampler(LadderAdaptation):
         return thermodynamic_integration(x, logls1, ngrid=self.z_ngrid, nsim=self.z_nsim)
     
 
+    def get_autocorr_time(self, **kwargs):
+        """Get the estimated autocorrelation time.
+
+        This method returns the estimated autocorrelation time from the backend. It is useful
+        for assessing the convergence of the chains.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The estimated autocorrelation time.
+        """
+        return self.backend.get_autocorr_time(**kwargs)
+
     def get_betas(self, **kwargs):
+        """Get the betas of the chains.
+
+        This method returns the betas history of the chains from the backend. It is useful
+        for checking the temperature ladder adaptation.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The betas of the chains.
+        """
         return self.get_value("beta_history", **kwargs)
 
     def get_chain(self, **kwargs):
+        """Get the chain of samples.
+
+        This method returns the chain of samples from the backend. It is useful
+        for analyzing the posterior distribution.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The chain of samples.
+        """
         return self.get_value("chain", **kwargs)
 
     def get_blobs(self, **kwargs):
+        """Get the blobs.
+
+        This method returns the blobs from the backend. Blobs are extra information
+        returned by the log-probability function.
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The chain of samples.
+        """
         return self.get_value("blobs", **kwargs)
 
     def get_log_prob(self, **kwargs):
+        """Get the log probability.
+
+        This method returns the log probability from the backend. It is useful for
+        analyzing the convergence of the chains.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The log probability.
+        """
         return self.get_value("log_prob", **kwargs)
 
     def get_log_like(self, **kwargs):
+        """Get the log likelihood.
+
+        This method returns the log likelihood from the backend. It is useful for
+        analyzing the posterior distribution.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            ndarray: The log likelihood.
+        """
         return self.get_value("log_like", **kwargs)
 
     def get_last_sample(self, **kwargs):
+        """Get the last sample.
+
+        This method returns the last sample from the backend. It is useful for
+        checking the current state of the chains.
+
+        Args:
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            State: The last sample.
+        """
         return self.backend.get_last_sample()
 
     def get_value(self, name, **kwargs):
+        """Get a value from the backend.
+
+        This method returns a value from the backend by its name. It is useful for
+        accessing specific data stored during sampling.
+
+        Args:
+            name (str): The name of the value to retrieve.
+            **kwargs: Additional keyword arguments passed to the backend.
+
+        Returns:
+            The value from the backend.
+        """
         return self.backend.get_value(name, **kwargs)
 
-    def get_autocorr_time(self, **kwargs):
-        return self.backend.get_autocorr_time(**kwargs)
 
     def _parse_moves(self, moves, tsw_history, smd_history):
         """Parse and initialize the moves"""

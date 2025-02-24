@@ -1,6 +1,6 @@
-Metadata-Version: 2.1
+Metadata-Version: 2.2
 Name: reddemcee
-Version: 0.8
+Version: 0.8.5
 Summary: An Adaptative Parallel Tempering wrapper for emcee 3 for personal use
 Author: ReddTea
 Author-email: redd@tea.com
@@ -13,6 +13,14 @@ License-File: LICENSE
 Requires-Dist: numpy
 Requires-Dist: emcee>=3
 Requires-Dist: tqdm
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
 
 # Reddemcee
 

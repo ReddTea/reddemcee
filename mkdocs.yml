@@ -1,9 +1,10 @@
 site_name: Reddemcee
-site_description: Adaptative Parallel Tempering wrapper for emcee.
-site_author: Pablo A. Pena
+site_description: Adaptative Parallel Tempering MCMC in python.
+site_author: Pablo A. Pena R.
 
-repo_url: https://github.com/ReddTea/reddemcee
-site_url: !ENV READTHEDOCS_CANONICAL_URL
+repo_url: 'https://github.com/ReddTea/reddemcee/'
+site_url: 'https://reddemcee.readthedocs.io/'
+
 nav:
   - Home: index.md
   - User Guide: user-guide/README.md
@@ -16,12 +17,43 @@ nav:
       - Parallelization: tutorials/parallelization/parallelization.md
       - Autocorrelation Analysis: tutorials/autocorrelation-analysis.md
       - Moves: tutorials/moves.md
+  - API Reference: api.md
 
 theme:
-  name: readthedocs  # material  # readthedocs # mkdocs #
-  color_mode: auto
-  user_color_mode_toggle: true
-  nav_style: primary
+  name: material #readthedocs  # material  # readthedocs # mkdocs #
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default 
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: black
+      accent: indigo
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+
+  features:
+    - header.autohide
+  # favicon: fontawesome/solid/chess-king
+  icon:
+    repo: fontawesome/brands/github
+  # readthedocs
+  # color_mode: auto
+  # user_color_mode_toggle: true
+  # nav_style: primary
 
 markdown_extensions:
   - pymdownx.superfences
@@ -33,3 +65,27 @@ extra_javascript:
 
 plugins:
   - search
+  - privacy
+  - autorefs
+  - mkdocstrings
+
+extra:
+  analytics:
+    provider: google
+    property: G-XXXXXXXXXX
+  consent:
+    title: Cookie consent
+    actions:
+    - accept
+    - reject
+    - manage
+    description: >- 
+      We use cookies to recognize your repeated visits and preferences, as well
+      as to measure the effectiveness of our documentation and whether users
+      find what they're searching for. With your consent, you're helping us to
+      make our documentation better.
+
+
+copyright: >
+  Copyright &copy; 2024 - 2025 Pablo A. Pena R. –
+  <a href="#__consent">Change cookie settings</a>

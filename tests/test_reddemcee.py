@@ -78,8 +78,10 @@ if True:
                                   #                 2.90971855e-03, 1.29839577e-03, 1.47444114e-12]),
                                   )#False
     
-    sampler.config_adaptation_halflife = 1000
-    sampler.config_adaptation_rate = 50/nwalkers
+    sampler.af_history_bool = True
+
+    sampler.config_adaptation_halflife = 500
+    sampler.config_adaptation_rate = 60/nwalkers
     sampler.run_mcmc(p0, nsweeps, nsteps)
     
     time_end = time.time()
@@ -87,19 +89,24 @@ if True:
     print(f'Total time: {tot_time} sec')
 
 discard0 = 500
+
 z1 = sampler.thermodynamic_integration_classic(discard=discard0)
-
-
 z2 = sampler.thermodynamic_integration(discard=discard0)
+
+logls0 = sampler.get_logls(flat=True, discard=discard0)
+logls = np.mean(logls0, axis=1)
 
 if True:
     bh = sampler.betas_history
-    rh = sampler.ratios_history
+    rh = sampler.ts_ratios_history
+    af = sampler.af_history
 
-    fig, axes = pl.subplots(2, 1, figsize=(9, 5), sharex=True)
+    fig, axes = pl.subplots(3, 1, figsize=(14, 6), sharex=True)
 
     bh1 = bh.reshape((setup[2], setup[0]))
     rh1 = rh.reshape((setup[2], setup[0]-1))
+    af1 = np.append(np.zeros(setup[0]), af).reshape((setup[2]+1, setup[0]))
+    af1 = np.diff(af1, axis=0)
 
     for i in range(setup[0]-2):
             bh_sel = bh1[:, i]
@@ -108,32 +115,38 @@ if True:
             axes[0].set_xscale('log')
             axes[0].set_yscale('log')
 
+    for i in np.arange(setup[0]):
+        af_sel = af1[:, i]
+        axes[1].plot(np.arange(setup[2])*setup[3], af_sel, alpha=0.5)
             
     for i in np.arange(setup[0]-1):
         r = rh1[:, i]
-        axes[1].plot(np.arange(setup[2])*setup[3], r, alpha=0.5)
-                
+        axes[2].plot(np.arange(setup[2])*setup[3], r, alpha=0.5)
+    
     if True:
-        axes[1].set_xlabel("N Step")
+        axes[2].set_xlabel("N Step")
+
         axes[0].set_ylabel(r"$\beta^{-1}$")
-        axes[1].set_ylabel(r"$a_{frac}$")
+        axes[1].set_ylabel(r"$\bar{A_{f}}$")
+        axes[2].set_ylabel(r"$a_{frac}$")
             
     pl.tight_layout()
-    pl.savefig('save3.png')
+    pl.savefig('test_frac.png')
 
 if True:
     my_text = rf'Evidence: {np.round(z2[0], 3)} $\pm$ {np.round(z2[1], 3)}'
+    c = ['C0', 'C1', 'C2', 'C4', 'C7', 'C8', 'C9']
+    colors = np.array([c,c,c,c,c]).flatten()
     if True:
         fig, ax = pl.subplots()
-
         for ti in range(ntemps_):
-            bet = bh1[ti]
+            bet = bh1.T[ti]
             ax.plot(bet, np.ones_like(bet)*logls[ti], colors[ti])
             ax.plot(bet[-1], logls[ti], colors[ti]+'o')
 
         ylims = ax.get_ylim()
         
-        betas0 = [x[-1] for x in bh1]
+        betas0 = [x[-1] for x in bh1.T]
 
         ax.fill_between(np.append(betas0, 0),
                         np.append(logls, logls[-1]),
@@ -144,14 +157,17 @@ if True:
         
         ax.set_ylim(ylims)
     if True:
-        ax.scatter([], [], alpha=0, label=my_text)
+        #ax.scatter([], [], alpha=0, label=my_text)
         pl.legend(loc=4)
-        ax.set_xlabel(xaxis_la, fontsize=xaxis_fs)
-        ax.set_ylabel(yaxis_la, fontsize=yaxis_fs)
+        ax.set_xlabel('temps')
+        ax.set_ylabel('mean(logls)')
         
         ax.set_xlim([0, 1])
         pl.tight_layout()
-        pl.savefig(saveplace+f'/plots/betas/beta_ladder.{ptfmt}',
-                                    bbox_inches='tight')
+        pl.savefig('test_evidence.png',
+                   bbox_inches='tight')
         #pl.show()
         pl.close()
+
+
+#
