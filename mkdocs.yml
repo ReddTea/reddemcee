@@ -3,7 +3,7 @@ site_description: Adaptative Parallel Tempering MCMC in python.
 site_author: Pablo A. Pena R.
 
 repo_url: 'https://github.com/ReddTea/reddemcee/'
-site_url: 'https://reddemcee.readthedocs.io/'
+site_url: !ENV READTHEDOCS_CANONICAL_URL
 
 nav:
   - Home: index.md
