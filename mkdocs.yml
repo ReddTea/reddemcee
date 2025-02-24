@@ -21,6 +21,7 @@ nav:
 
 theme:
   name: material #readthedocs  # material  # readthedocs # mkdocs #
+
   palette:
     # Palette toggle for automatic mode
     - media: "(prefers-color-scheme)"
@@ -42,12 +43,11 @@ theme:
       scheme: slate
       toggle:
         icon: material/brightness-4
-        name: Switch to system preference
-
+        name: Switch to system preference 
 
   features:
     - header.autohide
-  # favicon: fontawesome/solid/chess-king
+    # favicon: fontawesome/solid/chess-king
   icon:
     repo: fontawesome/brands/github
   # readthedocs
