@@ -49,5 +49,5 @@ sampler = reddemcee.PTSampler(nwalkers,
                              logl_args=[ivar],
                              )
                              
-sampler.run_mcmc(p0, 100, 2)  # starting pos, nsweeps, nsteps
+sampler.run_mcmc(p0, nsweeps, nsteps)  # starting pos, nsweeps, nsteps
 ```

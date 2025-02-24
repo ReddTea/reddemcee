@@ -1,435 +1,545 @@
 # @auto-fold regex /^\s*if/ /^\s*else/ /^\s*def/
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*- 
-from copy import deepcopy
+# -*- coding: utf-8 -*-
 
-import emcee
-import numpy as np
-from emcee.autocorr import integrated_time
-from emcee.utils import deprecation_warning
-from scipy.interpolate import PchipInterpolator
+# my coding convention
+# **EVAL : evaluate the performance of this method
+# **RED  : redo this
+# **DEB  : debugging needed in this part
+# **DEL  : DELETE AT SOME POINT
+
+
+from itertools import product as iter_prod
+from collections import namedtuple
+from collections.abc import Iterable
+
+from typing import Dict, List, Optional, Union
+
+from .state import PTState
+from .moves import StretchMove, PTMove
+from .backend import PTBackend
+from .wrapper import PTWrapper
+from .utils import set_temp_ladder
+
 from tqdm import tqdm
+import numpy as np
 
-from .reddwrappers import PTWrapper
+class LadderAdaptation(object):
+    def calc_decay(self):
+        return self.config_adaptation_halflife / (self.backend[0].iteration + self.config_adaptation_halflife)
 
-temp_table = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,
-                      2.71225, 2.49879, 2.34226, 2.22198, 2.12628,
-                      2.04807, 1.98276, 1.92728, 1.87946, 1.83774,
-                      1.80096, 1.76826, 1.73895, 1.7125, 1.68849,
-                      1.66657, 1.64647, 1.62795, 1.61083, 1.59494,
-                      1.58014, 1.56632, 1.55338, 1.54123, 1.5298,
-                      1.51901, 1.50881, 1.49916, 1.49, 1.4813,
-                      1.47302, 1.46512, 1.45759, 1.45039, 1.4435,
-                      1.4369, 1.43056, 1.42448, 1.41864, 1.41302,
-                      1.40761, 1.40239, 1.39736, 1.3925, 1.38781,
-                      1.38327, 1.37888, 1.37463, 1.37051, 1.36652,
-                      1.36265, 1.35889, 1.35524, 1.3517, 1.34825,
-                      1.3449, 1.34164, 1.33847, 1.33538, 1.33236,
-                      1.32943, 1.32656, 1.32377, 1.32104, 1.31838,
-                      1.31578, 1.31325, 1.31076, 1.30834, 1.30596,
-                      1.30364, 1.30137, 1.29915, 1.29697, 1.29484,
-                      1.29275, 1.29071, 1.2887, 1.28673, 1.2848,
-                      1.28291, 1.28106, 1.27923, 1.27745, 1.27569,
-                      1.27397, 1.27227, 1.27061, 1.26898, 1.26737,
-                      1.26579, 1.26424, 1.26271, 1.26121,
-                      1.25973])
+    def calc_dss(self):
+        kappa = self.calc_decay() / self.config_adaptation_rate
+        adjust = self.adjustment_fn()
+        adjust[np.abs(adjust) < 1e-8] = 0   # Failsafe for very small values
+        return kappa * adjust
+    
+    def select_adjustment(self, option=0):
+        self.adjustment_fn = getattr(self, f'calc_adjust{option}')
 
-dmax = temp_table.shape[0]
+    def calc_adjust0(self):
+        return -np.diff(self.ts_accepted)
+    
+    def calc_adjust1(self):
+        return -np.diff(self.smd)
+    
+    def calc_adjust2(self):
+        # CvL
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        db = -np.diff(self.betas)
+        varL = np.var(logls, axis=1)
+        a = np.exp(-varL[:-1] * db**2)
+        return -np.diff(a)
+
+    def calc_adjust3(self):
+        # dE_m/sig_m
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        Esig = np.std(logls, axis=1)
+        Emean = np.mean(logls, axis=1)
+        sig1 = Esig[:-1]
+        sig2 = Esig[1:]
+        sigmean = (sig1+sig2)/2
+        diffE = np.diff(Emean)
+        a = diffE/sigmean        
+        return -np.diff(a)
 
 
-def set_temp_ladder(ntemps, ndims, temp_table=temp_table):
-    tstep = temp_table[ndims-1]
-    if ndims > dmax:
-        # An approximation to the temperature step at large dimension
-        tstep = 1.0 + 2.0*np.sqrt(np.log(4.0))/np.sqrt(ndims)
 
-    return np.exp(np.linspace(0, -(ntemps-1)*np.log(tstep), ntemps))
-
-
-class PTSampler(object):
-    def __init__(self, nwalkers, ndim, log_likelihood_fn, log_prior_fn,
-                 pool=None, moves=None, backend=None, vectorize=False,
-                 blobs_dtype=None, parameter_names=None, logl_args=None,
-                 logl_kwargs=None, logp_args=None, logp_kwargs=None,
-                 ntemps=None, betas=None, adaptative=True, a=None,
-                 postargs=None, threads=None, live_dangerously=None,
-                 runtime_sortingfn=None,
-                 config_adaptation_halflife=1000,
-                 config_adaptation_rate=100,
-                 config_adaptation_decay=0):
-        """
-        Initializes the sampler with the specified parameters for a Markov Chain Monte Carlo (MCMC) process. This setup includes defining the number of walkers, dimensions, likelihood and prior functions, and various configuration options for the sampling process.
-
-        Args:
-            nwalkers (int): The number of walkers in the ensemble.
-            ndim (int): The number of dimensions of the parameter space.
-            log_likelihood_fn (callable): The log-likelihood function to evaluate the likelihood of the parameters.
-            log_prior_fn (callable): The log-prior function to evaluate the prior distribution of the parameters.
-            pool (optional): A multiprocessing pool for parallel computation.
-            moves (optional): A list of move functions for the walkers.
-            backend (optional): A backend for storing samples.
-            vectorize (bool, optional): Whether to vectorize the likelihood and prior functions.
-            blobs_dtype (optional): Data type for the blobs returned by the sampler.
-            parameter_names (optional): Names of the parameters being sampled.
-            logl_args (optional): Additional arguments for the log-likelihood function.
-            logl_kwargs (optional): Additional keyword arguments for the log-likelihood function.
-            logp_args (optional): Additional arguments for the log-prior function.
-            logp_kwargs (optional): Additional keyword arguments for the log-prior function.
-            ntemps (int, optional): The number of temperatures for parallel tempering.
-            betas (optional): The temperature ladder for parallel tempering.
-            adaptative (bool, optional): Whether to enable adaptive configuration.
-            a (optional): Deprecated argument, use 'moves' instead.
-            postargs (optional): Deprecated argument.
-            threads (optional): Deprecated argument.
-            live_dangerously (optional): Deprecated argument.
-            runtime_sortingfn (optional): Deprecated argument.
-            config_adaptation_halflife (int, optional): The halflife for adaptation configuration.
-            config_adaptation_rate (int, optional): The rate of adaptation configuration.
-            config_adaptation_decay (int, optional): The decay option for adaptation configuration.
-
-        Raises:
-            DeprecationWarning: If deprecated arguments are used.
-
-        """
-        # Default arguments
-        # self.ll_args_ = logl_args if logl_args is not None else [] # safer but verbosy
-        self.ll_args_ = logl_args or []
-        self.lp_args_ = logp_args or []
-
-        self.ll_kwargs_ = logl_kwargs or {}
-        self.lp_kwargs_ = logp_kwargs or {}
+class PTSampler(LadderAdaptation):
+    def __init__(
+        self,
+        nwalkers,
+        ndim,
+        log_like,
+        log_prior,
+        betas=None,
+        ntemps=None,
+        pool=None,
+        moves=None,
+        loglargs=None,
+        loglkwargs=None,
+        logpargs=None,
+        logpkwargs=None,
+        backend=None,
+        vectorize=False,
+        blobs_dtype=None,
+        smd_history=False,
+        tsw_history=True,
+        adapt_tau=1000,
+        adapt_nu=1,
+        adapt_mode=0,
+        parameter_names: Optional[Union[Dict[str, int], List[str]]] = None,
+    ):
+        # Parse Move
+        self._parse_moves(moves, tsw_history, smd_history)
         
-        ######################################################
-        # Warn about deprecated arguments
-        deprecated_args = [postargs, threads, runtime_sortingfn, live_dangerously]
-        deprecated_args_str = ['postargs', 'threads', 'runtime_sortingfn', 'live_dangerously']
+        self.config_adaptation_halflife = adapt_tau
+        self.config_adaptation_rate = adapt_nu
+        self.config_adaptation_mode = adapt_mode
+        self.select_adjustment(self.config_adaptation_mode)
 
-        if a is not None:
-            deprecation_warning("The 'a' argument is deprecated, use 'moves' instead")
-
-        for arg, arg_str in zip(deprecated_args, deprecated_args_str):
-            if arg is not None:
-                deprecation_warning(f"The '{arg_str}' argument is deprecated")
-        
-
-        # Beta ladder initialization
-        self.ntemps = ntemps or 5
-        self.betas = betas if betas is not None else set_temp_ladder(self.ntemps, ndim)
-        #####################################################
-        # Initialize instance variables
-        self.nwalkers = nwalkers
-        self.ndim = ndim
-        self.lp_ = log_prior_fn
-        self.ll_ = log_likelihood_fn
-
-        self.n_swap_accept = np.zeros(ntemps-1)
-        self.time0 = 0
-        self.nglobal = 0
-        self.ratios = None
-        self.ratios_history = np.array([])
-        self.betas_history = np.array([])
+        self.z_ngrid = 10001
+        self.z_nsim = 1000 
 
         self.pool = pool
-        self.betas_history_bool = True
-        self.z_num_grid = 10001
-        self.z_num_simulations = 1000
-        self.adaptative = adaptative
-        self.config_adaptation_halflife = config_adaptation_halflife  # adaptations reduced by half at this time
-        self.config_adaptation_rate = config_adaptation_rate  # smaller, faster
-        self.select_decay(option=config_adaptation_decay)
-        # Default values for lists
-        #default_list = lambda lst, size, default: [default for _ in range(size)] if lst is None else lst
-        self.vectorize = [False for _ in range(self.ntemps)] if vectorize is False else vectorize
-        #self.moves = default_list(moves, self.ntemps, None)
-        #self.blobs_dtype = default_list(blobs_dtype, self.ntemps, None)
-        #self.backend = default_list(backend, self.ntemps, None)
+        self.vectorize = vectorize
+        self.blobs_dtype = blobs_dtype
 
-        self.moves = moves if moves is not None else [None] * self.ntemps
-        self.blobs_dtype = blobs_dtype if blobs_dtype is not None else [None] * self.ntemps
-        self.backend = backend if backend is not None else [None] * self.ntemps
+        self.ndim = ndim
+        self.nwalkers = nwalkers
+        self.ntemps = ntemps or len(betas)
+
+        self.betas = betas or set_temp_ladder(ntemps, ndim)
 
 
-        ## BACKEND
-        #self.backend = Backend() if backend is None else backend
-        # Deal with re-used backends
-        # Check the backend shape
-        #########
-        # Probability function wrappers
-        self.my_probs_fn = np.array([PTWrapper(self.ll_, self.lp_, b, loglargs=self.ll_args_,
-                                  logpargs=self.lp_args_, loglkwargs=self.ll_kwargs_,
-                                  logpkwargs=self.lp_kwargs_) for b in self.betas])
+        # Initialize random number generator
+        self._random = np.random.RandomState()
+        # Initialize the Backend
+        self._init_backend(backend)
 
-        self.sampler = np.array([emcee.EnsembleSampler(self.nwalkers, self.ndim,
-                        self.my_probs_fn[t], pool=self.pool,
-                        moves=self.moves[t], backend=self.backend[t],
-                        vectorize=self.vectorize[t], blobs_dtype=self.blobs_dtype[t],
-                        ) for t in range(self.ntemps)])
+        # Wrap the log-probability functions
+        self.log_prob_fn = PTWrapper(log_like, log_prior, loglargs, loglkwargs, logpargs, logpkwargs)
+
+        # Save the parameter names
+        self._parameter_names(parameter_names)
 
 
-    def sample(self,
-               initial_state,
-               iterations=1,
-               tune=False,
-               skip_initial_state_check=False,
-               thin_by=1,
-               thin=None,
-               store=True,
-               progress=False,
-               progress_kwargs=None):
+    def sample(
+        self,
+        initial_state, 
+        nsteps=1,
+        nsweeps=1,
+        tune=False,
+        thin_by=1,
+        store=True,
+        progress=False
+    ):
+        """Advance the chain as a generator
 
-        self.samp = initial_state
+        Args:
+            initial_state (State or ndarray[nwalkers, ndim]): The initial state of the walkers.
+            nsteps (Optional[int]): The number of steps to generate.
+            nsweeps (Optional[int]): The number of sweeps to generate.
+            tune (Optional[bool]): If True, tune the parameters of some moves.
+            thin_by (Optional[int]): Store every `thin_by` samples.
+            store (Optional[bool]): If True, store the positions and log-probabilities.
+            progress (Optional[bool or str]): Show a progress bar if True.
 
-        for t in range(self.ntemps):
-            sampler_t = self[t]
-            #samp_t = self.samp[t]
-            for self.samp[t] in sampler_t.sample(self.samp[t],
-                                               iterations=iterations,
-                                               tune=tune,
-                                               skip_initial_state_check=skip_initial_state_check,
-                                               thin_by=thin_by,
-                                               thin=thin,
-                                               store=store,
-                                               progress=progress,
-                                               progress_kwargs=progress_kwargs):
-                pass
+        Yields:
+            State: The state of the ensemble at each step.
+
+        """
+        self._check_sample_init(nsteps, store, thin_by)
+
+        # Interpret the input as a walker state.
+        state = PTState(initial_state, copy=True)
+
+        # Check and Initialize states
+        self._init_states(state)
+
+        # Thin
+        thin_by = int(thin_by)
+        yield_step = checkpoint_step = thin_by
+
+        iterations = int(nsteps * nsweeps)
+        # Store
+        if store:
+            self.backend.grow(nsweeps)
+            for t in range(self.ntemps):
+                self.backend[t].grow(iterations, state[t].blobs)
+
+        # Set up a wrapper around the relevant model functions
+        map_fn = self.pool.map if self.pool is not None else map
+        model = self._create_model(map_fn)
+
+        # Inject the progress bar
+        total = None if nsteps is None else iterations * yield_step * self.ntemps
+
+        with tqdm(total=total, disable=not progress) as pbar:
+            i = 0
+            for _ in range(nsweeps):
+                # SELECT SWAP FROM RANDOM CHOICE
+                swap_move = self._swap_move
+                state, self.ts_accepted, self.smd = swap_move.swap(state)
+
+                for t in range(self.ntemps):
+                    for _, _ in iter_prod(range(nsteps), range(yield_step)):
+                        # Choose a random move
+                        move = self._random.choice(self._moves, p=self._weights)
+
+                        # Propose
+                        state[t], accepted = move.propose(model, state[t])
+                        state.random_state = self._random.get_state()
+
+                        if tune:
+                            move.tune(state[t], accepted)
+
+                        # Save the new step
+                        if store and (i + 1) % checkpoint_step == 0:
+                            self.backend[t].save_step(state[t], accepted)
+
+                        pbar.update(1)
+                        i += 1
+
+                # TEMPERATURE SWAP
+                state, self.ts_accepted, self.smd = swap_move.swap(state)
+
+                # TEMPERATURE LADDER ADAPTATION
+                state = swap_move.adapt(state, self.calc_dss())
+
+                # SAVE
+                self.backend.save_step(state, self.ts_accepted, self.smd)
+
+                # Overwrite sampler betas, this is for user
+                self.betas = state.betas
+                # Yield the result as an iterator
+                yield state
 
 
-        if self.betas_history_bool:
-            self.betas_history = np.append(self.betas_history, self.betas)
-        self.temp_swaps_()
+    def run_mcmc(self, initial_state, nsteps, nsweeps, **kwargs):
+        """
+        Iterate :func:`sample` for ``nsteps`` iterations and return the result
 
-        if self.adaptative:
-            self.ladder_adjustment()
+        Args:
+            initial_state: The initial state or position vector. Can also be
+                ``None`` to resume from where :func:``run_mcmc`` left off the
+                last time it executed.
+            nsteps: The number of steps to run.
+            nsweeps: The number of sweeps to run.
 
-        yield self.samp
 
+        Other parameters are directly passed to :func:`sample`.
 
-    def run_mcmc(self, initial_state, nsweeps, nsteps, progress=True):
+        This method returns the most recent result from :func:`sample`.
+
+        """
         if initial_state is None:
-            print('Initial state is none')
-            if self.__previous_state[0] is None:
+            if self._previous_state is None:
                 raise ValueError(
                     "Cannot have `initial_state=None` if run_mcmc has never "
-                    "been called.")
-            initial_state = self.__previous_state
+                    "been called."
+                )
+            initial_state = self._previous_state
 
         results = None
-        
+        for results in self.sample(initial_state, nsteps=nsteps, nsweeps=nsweeps, **kwargs):
+            pass
 
-        pbar = tqdm(total=nsteps*nsweeps, disable=not progress)
-        for _ in range(nsweeps):
-            for results in self.sample(initial_state, iterations=nsteps):
-                pbar.update(nsteps)
-
-        pbar.close()
+        # Store so that the ``initial_state=None`` case will work
+        self._previous_state = results
 
         return results
 
 
-    def temp_swaps_(self):
-        dbetas = self.betas[:-1] - self.betas[1:]
-        for t in range(self.ntemps-1, 0, -1):
-            dbeta = dbetas[t-1]
+    def compute_log_prob(self, coords, beta):
+        """Calculate the vector of log-probability for the walkers"""
+        p = coords
 
-            ll1 = self.samp[t].blobs  # hot
-            ll2 = self.samp[t-1].blobs  # cold
+        # Check that the parameters are in physical ranges.
+        if np.any(np.isinf(p)):
+            raise ValueError("At least one parameter value was infinite")
+        if np.any(np.isnan(p)):
+            raise ValueError("At least one parameter value was NaN")
 
-            raccept = np.log(np.random.uniform(size=self.nwalkers))
-            paccept = dbeta * (ll1 - ll2)
+        if self.params_are_named:
+            p = ndarray_to_list_of_dicts(p, self.parameter_names)
 
-            asel = paccept > raccept
+        beta_array = np.repeat(beta, len(p))
 
-            self.n_swap_accept[t-1] = np.sum(asel)
+        if self.vectorize:
+            results = self.log_prob_fn(zip(p, beta_array))
+        else:
+            map_func = self.pool.map if self.pool is not None else map
+            results = list(map_func(self.log_prob_fn, zip(p, beta_array)))
 
-            self.samp[t].coords[asel], self.samp[t-1].coords[asel] = self.samp[t-1].coords[asel], self.samp[t].coords[asel]
-            self.samp[t].log_prob[asel], self.samp[t-1].log_prob[asel] = self.samp[t-1].log_prob[asel] - dbeta*ll2[asel], self.samp[t].log_prob[asel] + dbeta*ll1[asel]
-            self.samp[t].blobs[asel], self.samp[t-1].blobs[asel] = ll2[asel], ll1[asel]
-            
-        self.ratios = self.n_swap_accept / self.nwalkers
-        self.ratios_history = np.append(self.ratios_history, self.ratios[::-1])
-        
 
-    def ladder_adjustment(self):
-        # sourcery skip: remove-redundant-pass
+        # Unpack results
+        try:
+            # Assume results are tuples: (log_prob, log_like, *blobs)
+            log_prob = np.array([_scalar(l[0]) for l in results])
+            log_like = np.array([_scalar(l[1]) for l in results])
+            blobs = [l[2:] for l in results if len(l) > 2]
+            blobs = self._process_blobs(blobs) if blobs else None
+        except Exception as e:
+            raise ValueError(f"Error in log_prob_fn: {e}") from e
+
+        if np.any(np.isnan(log_prob)):
+            raise ValueError("Probability function returned NaN")
+
+        return log_prob, log_like, blobs
+
+
+    def reset(self):
         """
-        Execute temperature adjustment according to dynamics outlined in
-        `arXiv:1501.05823 <http://arxiv.org/abs/1501.05823>`_.
+        Reset the bookkeeping parameters
+
         """
-
-        betas = self.betas.copy()
-        time = self.time0 + self[0].iteration
-
-        # Modulate temperature adjustments with a hyperbolic decay.
-        decay = self.config_adaptation_halflife / (time + self.config_adaptation_halflife)
-        
-        decay = self.decay_fn(decay)
-        # decay 1
-        #decay *= 1/(np.exp(-np.std(betas)))
-
-        # decay 2
-        #decay *= 1/(1-np.std(betas))
-
-        kappa = decay / self.config_adaptation_rate
-
-        # Construct temperature adjustments.
-        dSs = kappa * (self.ratios[:-1] - self.ratios[1:])
-
-        # Compute new ladder (hottest and coldest chains don't move).
-        deltaTs = np.diff(1 / betas[:-1])
-        deltaTs *= np.exp(dSs)
-        betas[1:-1] = 1 / (np.cumsum(deltaTs) + 1 / betas[0])
-
-        dbetas = betas - self.betas
-        self.betas = betas
-        for t in range(self.ntemps-1, 0, -1):
-            self.my_probs_fn[t].beta = self.betas[t]
-            self.samp[t].log_prob += self.samp[t].blobs * dbetas[t]
-        pass
+        self.backend.reset(self.ntemps, self.nwalkers, self.ndim,
+                           smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
 
 
-    def calc_decay0(self, decay):
-        return decay
-
-    def calc_decay1(self, decay):
-        return decay / (np.exp(-np.std(self.ratios)))
-
-    def calc_decay2(self, decay):
-        #ratios = 
-        #afc = abs(np.mean(self.ratios)-self.ratios[:-1])/np.std(self.ratios)
-        #return decay * afc
-        return decay / (1-np.std(self.ratios))
-    
-    def select_decay(self, option=0):
-        self.decay_fn = getattr(self, f'calc_decay{option}')
-
-    def thermodynamic_integration_classic(self, discard=1):
-        logls0 = self.get_logls(flat=True, discard=discard)
+    def thermodynamic_integration_classic(self, **kwargs):
+        from .utils import thermodynamic_integration_classic
+        logls0 = self.get_log_like(flat=True, **kwargs)
         logls = np.mean(logls0, axis=1)
 
-        if self.betas[-1] != 0:
-            betas1 = np.concatenate((self.betas, [0]))
-            betas2 = np.concatenate((self.betas[::2], [0]))
-            logls1 = np.concatenate((logls, [logls[-1]]))
-            logls2 = np.concatenate((logls[::2], [logls[-1]]))
-        else:
-            betas1 = self.betas
-            betas2 = np.concatenate((self.betas[:-1:2], [0]))
-            logls1 = logls
-            logls2 = np.concatenate((logls1[:-1:2], [logls1[-1]]))
-
-        logZ1 = -np.trapz(logls1, betas1)
-        logZ2 = -np.trapz(logls2, betas2)
-
-        return logZ1, np.abs(logZ1 - logZ2)
+        return thermodynamic_integration_classic(self.betas, logls)
 
 
-    def thermodynamic_integration(self, discard=1):
-        '''
-        Method to get Z and its error.
-        '''
-
-        # SORT BETAS AND LOGLS
-        x = deepcopy(self.betas)[::-1]
-        logls0 = self.get_logls(flat=True, discard=discard)
-        logls1 = deepcopy(logls0)[::-1]
+    def thermodynamic_integration(self, **kwargs):
+        from .utils import thermodynamic_integration
+        # Sort Betas And Logls
+        x = self.betas[::-1]
+        logls0 = self.get_log_like(flat=True, **kwargs)
+        logls1 = logls0[::-1]
 
         # if hot chain beta !=0, add it
+        # we approximate it's value to logls1[0]
+        # TODO add an option so this value can be provided
         if x[0] != 0:
             x = np.concatenate(([0], x))
             logls1 = np.concatenate(([logls1[0]], logls1))
 
-        
-        # get logL means
-        y = np.mean(logls1, axis=1)
-
-        # support variables
-        n = np.array([len(l) for l in logls1])
-        tau = np.array([integrated_time(logls1[i], c=5, tol=5, quiet=False)
-                      for i in range(len(y))]).flatten()
-
-        neff = n/tau
-
-        d1 = np.diff(x)
-        stdyn = np.std(logls1, axis=1, ddof=1) / np.sqrt(neff)
-
-        # calculate Z
-        num_grid = self.z_num_grid
-        num_simulations = self.z_num_simulations
-        xnew = np.linspace(min(x), max(x), num_grid)
-
-        # Interpolated values storage
-        interpolated_values = np.zeros((num_simulations, num_grid))
-
-        for i in range(num_simulations):
-            # Perturb data with random noise based on errors
-            y_noisy = y + np.random.normal(0, stdyn)
-
-            # Create PchipInterpolator object with noisy data
-            pchip = PchipInterpolator(x, y_noisy)
-
-            # Interpolate over fine grid and store results
-            interpolated_values[i, :] = pchip(xnew)
-
-        mean_interpolated = np.mean(interpolated_values, axis=0)
-        std_interpolated = np.std(interpolated_values, axis=0)
-
-        integral_trapz = np.trapz(mean_interpolated, xnew)
-
-        z_classic, zerr_classic = self.thermodynamic_integration_classic(discard=discard)
-        err_disc = abs(z_classic - integral_trapz)
-
-        err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
-                                    np.sum(std_interpolated[1:-1]**2) +
-                                    1/4*std_interpolated[-1]**2)
-        err_samp = np.sqrt(err_samp)
-        err = np.sqrt(err_disc**2+err_samp**2)
-
-        return integral_trapz, err, err_disc, err_samp
-
-
-    def reset(self):
-        self.time0 += self[0].iteration
-        
-        for s in self:
-            s.reset()
-
-        self.ratios = None
-        self.betas_history = [[] for _ in range(self.ntemps)]
-        self.ratios_history = np.array([])
-        
-
-    def get_attr(self, x):
-        return np.array([getattr(sampler_instance, x) for sampler_instance in self])
-
-
-    def get_func(self, x, kwargs=None):
-        if kwargs is None:
-            kwargs = {}
-        return np.array([getattr(sampler_instance, x)(**kwargs) for sampler_instance in self])
-
-
-    def get_chains(self, **kwargs):
-        return self.get_func('get_chain', kwargs=kwargs)
-
-
-    def get_logls(self, **kwargs):
-        return self.get_func('get_blobs', kwargs=kwargs)
-
+        return thermodynamic_integration(x, logls1, ngrid=self.z_ngrid, nsim=self.z_nsim)
     
-    def get_log_probs(self, **kwargs):
-        return self.get_func('get_log_prob', kwargs=kwargs)
+
+    def get_betas(self, **kwargs):
+        return self.get_value("beta_history", **kwargs)
+
+    def get_chain(self, **kwargs):
+        return self.get_value("chain", **kwargs)
+
+    def get_blobs(self, **kwargs):
+        return self.get_value("blobs", **kwargs)
+
+    def get_log_prob(self, **kwargs):
+        return self.get_value("log_prob", **kwargs)
+
+    def get_log_like(self, **kwargs):
+        return self.get_value("log_like", **kwargs)
+
+    def get_last_sample(self, **kwargs):
+        return self.backend.get_last_sample()
+
+    def get_value(self, name, **kwargs):
+        return self.backend.get_value(name, **kwargs)
+
+    def get_autocorr_time(self, **kwargs):
+        return self.backend.get_autocorr_time(**kwargs)
+
+    def _parse_moves(self, moves, tsw_history, smd_history):
+        """Parse and initialize the moves"""
+        if moves is None:
+            self._moves = [StretchMove()]
+            self._weights = [1.0]
+        elif isinstance(moves, Iterable):
+            # Check if moves is a sequence of (move, weight) tuples
+            first_elem = next(iter(moves))
+            if isinstance(first_elem, tuple) and len(first_elem) == 2:
+                self._moves, self._weights = zip(*moves)
+            else:
+                self._moves = list(moves)
+                self._weights = np.ones(len(self._moves))
+        else:
+            self._moves = [moves]
+            self._weights = [1.0]
+
+        self._weights = np.array(self._weights, dtype=float)
+        self._weights /= np.sum(self._weights)
+
+        # Parse the APT move schedule
+        self._swap_move = PTMove()
+        if tsw_history:
+            self._swap_move.tsw_hist = True
+
+        if smd_history:
+            self._swap_move.smd_hist = True
+
+    def _process_blobs(self, blobs):
+        """Process blobs to ensure consistent dtype and shape"""
+        if self.blobs_dtype is not None:
+            dt = self.blobs_dtype
+        else:
+            try:
+                dt = np.array(blobs[0]).dtype
+            except Exception:
+                dt = np.dtype('object')
+        return np.array(blobs, dtype=dt)
+
+    def _check_sample_init(self, nsteps, store, thin_by):
+        if nsteps is None and store:
+            raise ValueError("'store' must be False when 'nsteps' is None")
+        if thin_by <= 0:
+            raise ValueError("Invalid thinning argument")
+
+    def _check_states(self, states):
+        states_shape = np.shape(states)
+        if states_shape != (self.ntemps, self.nwalkers, self.ndim):
+            raise ValueError(f"incompatible input dimensions {states_shape}")
+        
+        for st in states:
+            if not walkers_independent(st.coords):
+                raise ValueError(
+                    "Initial state has a large condition number. "
+                    "Make sure that your walkers are linearly independent for the "
+                    "best performance"
+                )
+
+    def _init_states(self, states):
+        # Check the dimensions and walker independence
+        self._check_states(states)
+
+        for t in range(self.ntemps):
+            state = states[t]
+            beta = self.betas[t]
+
+            if state.log_prob is None:
+                state.beta = beta
+                state.log_prob, state.log_like, state.blobs = self.compute_log_prob(state.coords, beta)
+
+            if np.shape(state.log_prob) != (self.nwalkers,):
+                raise ValueError("incompatible input dimensions")
+            if np.any(np.isnan(state.log_prob)):
+                raise ValueError("The initial log_prob was NaN")        
+
+    def _create_model(self, map_fn):
+        """Create a model for log probability calculations."""
+        return namedtuple("Model", ("log_prob_fn", "compute_log_prob_fn", "map_fn", "random"))(
+            self.log_prob_fn, self.compute_log_prob, map_fn, self._random
+        )
+
+    def _init_backend(self, backend):
+
+        self.backend = PTBackend() if backend is None else backend
+        if not self.backend.initialized:
+            self._previous_state = None
+            self.backend.reset(self.ntemps, self.nwalkers, self.ndim,
+                               smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
+
+            rstate = np.random.get_state()
+            self.backend.random_state = rstate  # MARK1
+        else:
+            # TODO check previous backend shape?
+
+            rstate = self.backend.random_state
+            if rstate is None:
+                rstate = np.random.get_state()
+
+            # Grab the last step so that we can restart
+            it = self.backend.iteration
+            if it > 0:
+                self._previous_state = self.get_last_sample()
+
+        self._random.set_state(rstate)  # MARK1
+
+    def _parameter_names(self, parameter_names):
+        self.params_are_named: bool = parameter_names is not None
+        if self.params_are_named:
+            assert isinstance(parameter_names, (list, dict))
+            assert not self.vectorize, "Named parameters with vectorization unsupported for now"
+
+            if isinstance(parameter_names, list):
+                assert len(parameter_names) == self.ndim, "Name all parameters or set `parameter_names` to `None`"
+                parameter_names = {name: i for i, name in enumerate(parameter_names)}
+
+            values = [
+                v if isinstance(v, list) else [v]
+                for v in parameter_names.values()
+            ]
+            values = {item for sublist in values for item in sublist}
+            assert values == set(range(self.ndim)), f"Not all values appear -- set should be 0 to {self.ndim-1}"
+            self.parameter_names = parameter_names
+
+    @property
+    def iteration(self):
+        return self.backend.iteration
+
+    @property
+    def acceptance_fraction(self):
+        """The fraction of proposed steps that were accepted"""
+        return self.backend.accepted / float(self.backend[0].iteration)
 
 
-    def __str__(self):
-        return 'My sampler, ntemps = %i' % self.ntemps
+    #@property
+    def get_tsw(self, **kwargs):
+        #temperature_swap_fraction
+        """The fraction of proposed swaps that were accepted"""
+        return self.backend.get_tsw(**kwargs)
 
 
-    def __getitem__(self, n):
-        return self.sampler[n]
+    #@property
+    def get_smd(self, **kwargs):
+        # swap_mean_distance
+        """The swap mean distance, normalised"""
+        return self.backend.get_smd(**kwargs)
 
 
-    def __setitem__(self, n, thing):
-        self.sampler[n] = thing
+    def __getstate__(self):
+        # In order to be generally picklable, we need to discard the pool
+        # object before trying.
+        d = self.__dict__.copy()
+        d["pool"] = None
+        return d
 
 
-    pass
+
+def walkers_independent(coords):
+    if not np.all(np.isfinite(coords)):
+        return False
+    C = coords - np.mean(coords, axis=0)[None, :]
+    C_colmax = np.amax(np.abs(C), axis=0)
+    if np.any(C_colmax == 0):
+        return False
+    C /= C_colmax
+    C_colsum = np.sqrt(np.sum(C**2, axis=0))
+    C /= C_colsum
+    return np.linalg.cond(C.astype(float)) <= 1e8
+
+
+def ndarray_to_list_of_dicts(
+    x: np.ndarray, key_map: Dict[str, Union[int, List[int]]]
+) -> List[Dict[str, Union[np.number, np.ndarray]]]:
+    """
+    A helper function to convert a ``np.ndarray`` into a list
+    of dictionaries of parameters. Used when parameters are named.
+
+    Args:
+      x (np.ndarray): parameter array of shape ``(N, n_dim)``, where
+        ``N`` is an integer
+      key_map (Dict[str, Union[int, List[int]]):
+
+    Returns:
+      list of dictionaries of parameters
+    """
+    return [{key: xi[val] for key, val in key_map.items()} for xi in x]
+
+
+def _scalar(fx):
+    # Make sure a value is a true scalar
+    # 1.0, np.float64(1.0), np.array([1.0]), np.array(1.0)
+    if not np.isscalar(fx):
+        try:
+            fx = np.asarray(fx).item()
+        except (TypeError, ValueError) as e:
+            raise ValueError("log_prob_fn should return scalar") from e
+    return float(fx)
