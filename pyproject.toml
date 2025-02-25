@@ -6,7 +6,7 @@ name = "reddemcee"
 version = "0.8.5"
 description = "Adaptive Parallel Tempering MCMC Ensemble Sampler"
 readme = "README.md"
-license = "MIT"
+license = {file="LICENSE"}
 authors = [
   { name="ReddTea", email="redd@tea.com" }
 ]

@@ -4,7 +4,7 @@ Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder
 
 
 # Overview
-`reddemcee` is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
+[`reddemcee`](https://reddemcee.readthedocs.io/en/latest) is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
 
 It's coded in such a way that minimal differences in input are required compared to emcee (v. 3.1.3).
 Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest) !
@@ -13,23 +13,23 @@ Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/
 # Dependencies
 
 This code makes use of:
-  - numpy
-  - tqdm (https://pypi.python.org/pypi/tqdm)
-  - emcee (https://github.com/dfm/emcee)
+  - `numpy`
+  - [`tqdm`](https://pypi.python.org/pypi/tqdm)
+  - [`emcee`](https://github.com/dfm/emcee)
 
-`tqdm` is for the progress bars.
+`tqdm` is used to display progress bars on the terminal.
 `emcee` is used for calculating the autocorrelation times.
 
 # Installation
 
-In the console type in your work folder
+In the console type in your work folder:
 ```sh
 pip install reddemcee
 ```
 
 # Usage
 
-Please refer to the test file in the tests folder.
+For a complete tutorial please refer to the test file in the tests folder.
 
 ```python
 import numpy as np
