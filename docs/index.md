@@ -1,14 +1,23 @@
 # Reddemcee
 
-An Adaptive Parallel Tempering initially made for personal use, released to the community.
+Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder algorithm [`EMPEROR`](https://github.com/ReddTea/astroemperor/). This sampler works as a stand-alone program, so the community might find it useful.
 
 
 ## Overview
-Reddemcee is an APT MCMC ensemble sampler, based on the excellent MCMC python code [emcee](https://arxiv.org/abs/1202.3665), that contains an adaptative parallel tempering version of the sampler, roughly according to [Vousden et al.](https://arxiv.org/abs/1501.05823) implementation.
-It's coded in such a way that minimal differences in input are required respect to emcee3.
+`reddemcee` is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
+
+It's coded in such a way that minimal differences in input are required compared to emcee (v. 3.1.3).
+Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest) !
 
 
 ## Quick Install
+
+### Dependencies
+
+This code makes use of:
+  - numpy
+  - tqdm (https://pypi.python.org/pypi/tqdm)
+  - emcee (https://github.com/dfm/emcee)
 
 ### Pip
 In the console type
@@ -51,3 +60,4 @@ sampler = reddemcee.PTSampler(nwalkers,
                              
 sampler.run_mcmc(p0, nsweeps, nsteps)  # starting pos, nsweeps, nsteps
 ```
+
