@@ -1,13 +1,14 @@
 # Reddemcee
 
-An Adaptative Parallel Tempering wrapper for emcee 3 for personal use, which
+An Adaptative Parallel Tempering wrapper for personal use, which
 someone in the community might find useful on it's own.
 
 # Overview
-Reddemcee is simply a wrapper for the excellent MCMC implementation [emcee](https://arxiv.org/abs/1202.3665),
-that contains an adaptative parallel tempering version of the sampler, according to [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
-It's coded in such a way that minimal differences in input are required, and it's
-fully compatible with emcee (v. 3.1.3).
+Reddemcee is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
+
+It's coded in such a way that minimal differences in input are required compared to emcee (v. 3.1.3).
+Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest) !
+
 
 # Dependencies
 
