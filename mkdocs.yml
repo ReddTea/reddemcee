@@ -71,7 +71,7 @@ plugins:
 extra:
   analytics:
     provider: google
-    property: G-XXXXXXXXXX
+    property: G-8B8H39TPV5
   consent:
     title: Cookie consent
     actions:
