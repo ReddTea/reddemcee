@@ -95,7 +95,3 @@ sampler.run_mcmc(p0, nsweeps, nsteps, progress=True)
 
 ## Getting help
 See the [User Guide] for more complete documentation of all of reddemcee' features.
-
-
-[Installation Guide]: user-guide/installation.md
-[User Guide]: user-guide/README.md

@@ -1,14 +1,10 @@
-# User Guide
-
-In depth utilities of reddemcee
-
----
+# Getting Started
 
 Check the topic you are interested in.
 
-- [Installation](installation.md)
-- [The APT Sampler](the-apt-sampler.md)
-- [FAQ](FAQ.md)
+- [Installation](#installation)
+- [The APT Sampler](#apt-sampler)
+- [FAQ](#faq)
 
 ---
 
@@ -16,7 +12,9 @@ Check the topic you are interested in.
 ## Installation
 
 ### Requirements
-Section in construction!
+
+- numpy
+- tqdm
 
 ### Pip
 In the console type

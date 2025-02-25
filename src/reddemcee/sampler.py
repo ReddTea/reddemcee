@@ -187,7 +187,7 @@ class PTSampler(LadderAdaptation):
             progress (Optional[bool or str]): Show a progress bar if True.
 
         Yields:
-            State: The state of the ensemble at each step.
+            State (State): The state of the ensemble at each step.
 
         """
         self._check_sample_init(nsteps, store, thin_by)
@@ -293,7 +293,24 @@ class PTSampler(LadderAdaptation):
 
 
     def compute_log_prob(self, coords, beta):
-        """Calculate the vector of log-probability for the walkers"""
+        """Calculate the vector of log-probability for the walkers.
+
+        This method calculates the log-probability for each walker given their
+        coordinates and the inverse temperature. It handles parameter naming,
+        vectorization, and parallel processing.
+
+        Args:
+            coords (ndarray): The coordinates of the walkers.
+            beta (float): The inverse temperature.
+
+        Returns:
+            Tuple[ndarray, ndarray, Optional[ndarray]]: A tuple containing the log
+                probability, log likelihood, and blobs (if any).
+
+        Raises:
+            ValueError: If any parameter value is infinite or NaN, or if the
+                probability function returns NaN.
+        """
         p = coords
 
         # Check that the parameters are in physical ranges.
@@ -331,9 +348,11 @@ class PTSampler(LadderAdaptation):
 
 
     def reset(self):
-        """
-        Reset the bookkeeping parameters
+        """Reset the book-keeping parameters.
 
+        This method resets the backend, clearing all stored data and resetting the
+        iteration counter. It also re-initializes the backend with the current
+        number of temperatures, walkers, dimensions, and swap history settings.
         """
         self.backend.reset(self.ntemps, self.nwalkers, self.ndim,
                            smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
@@ -347,7 +366,7 @@ class PTSampler(LadderAdaptation):
         temperatures.
 
         Args:
-            **kwargs: Additional keyword arguments passed to `get_log_like`.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
 
         Returns:
             float: The thermodynamic evidence.
@@ -366,7 +385,7 @@ class PTSampler(LadderAdaptation):
         integration of the average log-likelihood at different temperatures.
         
         Args:
-            **kwargs: Additional keyword arguments passed to `get_log_like`.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
 
         Returns:
             float: The thermodynamic evidence.
@@ -395,7 +414,7 @@ class PTSampler(LadderAdaptation):
         for assessing the convergence of the chains.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The estimated autocorrelation time.
@@ -409,7 +428,7 @@ class PTSampler(LadderAdaptation):
         for checking the temperature ladder adaptation.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The betas of the chains.
@@ -423,7 +442,7 @@ class PTSampler(LadderAdaptation):
         for analyzing the posterior distribution.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The chain of samples.
@@ -436,7 +455,7 @@ class PTSampler(LadderAdaptation):
         This method returns the blobs from the backend. Blobs are extra information
         returned by the log-probability function.
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The chain of samples.
@@ -450,7 +469,7 @@ class PTSampler(LadderAdaptation):
         analyzing the convergence of the chains.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The log probability.
@@ -464,7 +483,7 @@ class PTSampler(LadderAdaptation):
         analyzing the posterior distribution.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             ndarray: The log likelihood.
@@ -478,7 +497,7 @@ class PTSampler(LadderAdaptation):
         checking the current state of the chains.
 
         Args:
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             State: The last sample.
@@ -493,7 +512,7 @@ class PTSampler(LadderAdaptation):
 
         Args:
             name (str): The name of the value to retrieve.
-            **kwargs: Additional keyword arguments passed to the backend.
+            **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
             The value from the backend.

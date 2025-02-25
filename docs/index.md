@@ -1,11 +1,11 @@
 # Reddemcee
 
-An Adaptative Parallel Tempering wrapper for emcee3 initially made for personal use, released to the community with the hope it might be helpful to someone.
+An Adaptive Parallel Tempering initially made for personal use, released to the community.
 
 
 ## Overview
-Reddemcee is a wrapper for the excellent MCMC python implementation [emcee](https://arxiv.org/abs/1202.3665), that contains an adaptative parallel tempering version of the sampler, roughly according to [Vousden et al.](https://arxiv.org/abs/1501.05823) implementation.
-It's coded in such a way that minimal differences in input are required, respect to emcee3.
+Reddemcee is an APT MCMC ensemble sampler, based on the excellent MCMC python code [emcee](https://arxiv.org/abs/1202.3665), that contains an adaptative parallel tempering version of the sampler, roughly according to [Vousden et al.](https://arxiv.org/abs/1501.05823) implementation.
+It's coded in such a way that minimal differences in input are required respect to emcee3.
 
 
 ## Quick Install
@@ -25,7 +25,7 @@ python -m pip install -e .
 ```
 
 ## Quick usage
-```
+```python
 import numpy as np
 import reddemcee
 
@@ -39,14 +39,14 @@ ndim = 2
 ntemps, nwalkers, nsweeps, nsteps = 5, 50, 100, 2
 
 ivar = 1. / np.random.rand(ndim)
-p0 = list(np.random.randn(ntemps, nwalkers, ndim))
+p0 = np.random.randn(ntemps, nwalkers, ndim)
 
 sampler = reddemcee.PTSampler(nwalkers,
                              ndim,
                              log_like,
                              log_prior,
                              ntemps=ntemps,
-                             logl_args=[ivar],
+                             loglargs=[ivar],
                              )
                              
 sampler.run_mcmc(p0, nsweeps, nsteps)  # starting pos, nsweeps, nsteps
