@@ -105,7 +105,7 @@ class PTSampler(LadderAdaptation):
         adapt_mode=0,
         parameter_names: Optional[Union[Dict[str, int], List[str]]] = None,
     ):
-        """Initialize the adaptive parallel tempering MCMC ensemble sampler
+        """Initialize the adaptive parallel tempering MCMC ensemble sampler.
 
         Args:
             nwalkers (int): The number of walkers in each ensemble.
@@ -262,11 +262,11 @@ class PTSampler(LadderAdaptation):
         Iterate :func:`sample` for ``nsweeps`` times ``nsteps`` iterations and return the result
 
         Args:
-            initial_state: The initial state or position vector. Can also be
+            initial_state (State or ndarray[nwalkers, ndim]): The initial state or position vector. Can also be
                 ``None`` to resume from where :func:``run_mcmc`` left off the
                 last time it executed.
-            nsteps: The number of steps to run.
-            nsweeps: The number of sweeps to run.
+            nsteps (int): The number of steps to run.
+            nsweeps (int): The number of sweeps to run.
 
 
         Other parameters are directly passed to :func:`sample`.
@@ -369,7 +369,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
 
         Returns:
-            float: The thermodynamic evidence.
+            (float): The thermodynamic evidence.
         """        
         from .utils import thermodynamic_integration_classic
         logls0 = self.get_log_like(flat=True, **kwargs)
@@ -388,7 +388,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
 
         Returns:
-            float: The thermodynamic evidence.
+            (float): The thermodynamic evidence.
         """
 
         from .utils import thermodynamic_integration
@@ -417,7 +417,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The estimated autocorrelation time.
+            (ndarray): The estimated autocorrelation time.
         """
         return self.backend.get_autocorr_time(**kwargs)
 
@@ -431,7 +431,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The betas of the chains.
+            (ndarray): The betas of the chains.
         """
         return self.get_value("beta_history", **kwargs)
 
@@ -445,7 +445,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The chain of samples.
+            (ndarray): The chain of samples.
         """
         return self.get_value("chain", **kwargs)
 
@@ -458,7 +458,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The chain of samples.
+            (ndarray): The chain of samples.
         """
         return self.get_value("blobs", **kwargs)
 
@@ -472,7 +472,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The log probability.
+            (ndarray): The log probability.
         """
         return self.get_value("log_prob", **kwargs)
 
@@ -486,7 +486,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            ndarray: The log likelihood.
+            (ndarray): The log likelihood.
         """
         return self.get_value("log_like", **kwargs)
 
@@ -500,7 +500,7 @@ class PTSampler(LadderAdaptation):
             **kwargs (Optional[dict]): Additional keyword arguments passed to the backend.
 
         Returns:
-            State: The last sample.
+            (State): The last sample.
         """
         return self.backend.get_last_sample()
 
@@ -649,21 +649,21 @@ class PTSampler(LadderAdaptation):
 
     @property
     def acceptance_fraction(self):
-        """The fraction of proposed steps that were accepted"""
+        """The fraction of proposed steps that were accepted."""
         return self.backend.accepted / float(self.backend[0].iteration)
 
 
     #@property
     def get_tsw(self, **kwargs):
         #temperature_swap_fraction
-        """The fraction of proposed swaps that were accepted"""
+        """The fraction of proposed swaps that were accepted."""
         return self.backend.get_tsw(**kwargs)
 
 
     #@property
     def get_smd(self, **kwargs):
         # swap_mean_distance
-        """The swap mean distance, normalised"""
+        """The swap mean distance, normalised."""
         return self.backend.get_smd(**kwargs)
 
 

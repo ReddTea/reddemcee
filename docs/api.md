@@ -1,14 +1,16 @@
 # API Reference
 
+## Documentation for `PTSampler`
+
 ::: reddemcee.sampler.PTSampler
+    handler: python
     options:
-        show_root_heading: true
+        show_root_heading: false
         show_source: true
         members:
             - __init__
             - sample
             - run_mcmc
-            - compute_log_prob
             - reset
             - thermodynamic_integration_classic
             - thermodynamic_integration
@@ -20,10 +22,3 @@
             - get_log_like
             - get_last_sample
             - get_value
-
-::: reddemcee.sampler.LadderAdaptation
-    options:
-        show_root_heading: false
-        show_source: false
-        members:
-            - select_adjustment
