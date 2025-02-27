@@ -1,26 +1,32 @@
 requires = ["setuptools>=60", "wheel"]
 build-backend = "setuptools.build_meta"
 
+
 [project]
 name = "reddemcee"
 version = "0.8.5"
 description = "Adaptive Parallel Tempering MCMC Ensemble Sampler"
 readme = "README.md"
 license = {file="LICENSE"}
-authors = [
-  { name="ReddTea", email="redd@tea.com" }
-]
+authors = [{ name="ReddTea", email="redd@tea.com"}]
+keywords = ["python", "MCMC", "sampler", "adaptive", "parallel tempering"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent"
-]
+  "Operating System :: OS Independent",]
 dependencies = [
   "numpy",
   "emcee>=3",
-  "tqdm",
-]
+  "tqdm",]
 requires-python = ">=3.6"
+
+
+[project.urls]
+Homepage = "https://reddemcee.readthedocs.io/"
+Documentation = "https://reddemcee.readthedocs.io/"
+Repository = "https://github.com/ReddTea/reddemcee/"
+Issues = "https://github.com/ReddTea/reddemcee/issues"
+
 
 [tool.setuptools]
 # Tells setuptools that your source code is under "src"

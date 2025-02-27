@@ -15,7 +15,7 @@ Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/
 
 This code makes use of:
 
-  - `numpy`
+  - [`numpy`](https://numpy.org)
   - [`tqdm`](https://pypi.python.org/pypi/tqdm)
   - [`emcee`](https://github.com/dfm/emcee)
 

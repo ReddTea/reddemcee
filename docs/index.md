@@ -1,4 +1,4 @@
-# Reddemcee
+# reddemcee
 
 Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder algorithm [`EMPEROR`](https://github.com/ReddTea/astroemperor/). This sampler works as a stand-alone program, so the community might find it useful.
 
@@ -15,9 +15,10 @@ Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/
 ### Dependencies
 
 This code makes use of:
-  - numpy
-  - tqdm (https://pypi.python.org/pypi/tqdm)
-  - emcee (https://github.com/dfm/emcee)
+
+  - [`numpy`](https://numpy.org)
+  - [`tqdm`](https://pypi.python.org/pypi/tqdm)
+  - [`emcee`](https://github.com/dfm/emcee)
 
 ### Pip
 In the console type
@@ -61,3 +62,66 @@ sampler = reddemcee.PTSampler(nwalkers,
 sampler.run_mcmc(p0, nsweeps, nsteps)  # starting pos, nsweeps, nsteps
 ```
 
+## Quick Sampler Reference
+When setting up `PTSampler`, you can use the arguments:
+
+| Arg         | Type    | Description |
+|-------------|---------|---------------------|
+| ntemps      | int     | The number of temperatures. If None, determined from betas.|
+| betas       | list    | The inverse temperatures of the parallel chains.           |
+| pool        | Pool    | A pool object for parallel processing.                     |
+| loglargs    | list    | Positional arguments for the log-likelihood function.      |
+| loglkwargs  | list    | Keyword arguments for the log-likelihood function.         |
+| logpargs    | list    | Positional arguments for the log-prior function.           |
+| logpkwargs  | list    | Keyword arguments for the log-prior function.              |
+| backend     | Backend | A backend object for storing the chain.                    |
+| smd_history | bool    | Whether to store swap mean distance history.               |
+| tsw_history | bool    | Whether to store temperature swap history.                 |
+| adapt_tau   | float   | Halflife of adaptation hyper-parameter.                    |
+| adapt_nu    | float   | Rate of adaptation hyper-paramter.                         |
+| adapt_mode  | 0-3     | Mode of adaptation.                                        |
+
+The adaptation modes try to equalise the following quantity:
+
+| Mode | Description           |
+|------|-----------------------|
+| 0    | Temperature Swap Rate |
+| 1    | Swap Mean Distance    |
+| 2    | Specific Heat         |
+| 3    | dE/sig                |
+
+
+## Additional Utilities
+Additional functions on the sampler include:
+
+| Function                          | Description                                 |
+|-----------------------------------|---------------------------------------------|
+| thermodynamic_integration_classic | Calculates evidence using trapezoidal rule. |
+| thermodynamic_integration         | Interpolates, uses Monte-Carlo integration. |
+| get_autocorr_time                 | Auto-correlation time.                      |
+| get_betas                         | Returns beta history                        |
+| get_chain                         | Returns chain                               |
+| get_logprob                       | Returns log posteriors                      |
+
+All these functions accept as arguments:
+
+| Arg     | Description                       |
+|---------|-----------------------------------|
+| flat    | Flatten the walkers.              |
+| thin    | Take one every *thin* samples.    |
+| discard | Drop the first *discard* steps in samples.|
+
+For example, the previous chain would have shape (5, 200, 50, 2), for
+5 temperatures, 200 steps (nsweeps*nsteps), 50 walkers, and 2 dimensions.
+
+```python
+sampler.get_chain(discard=100)
+```
+
+Would return the samples with shape (5, 100, 50, 2). Dropping the first 100 for every walker.
+
+```python
+sampler.get_chain(discard=100, flat=True)
+```
+
+Would return the samples with shape (5, 5000, 2), 'linearising' the walkers.

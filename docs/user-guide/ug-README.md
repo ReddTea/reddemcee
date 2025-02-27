@@ -13,8 +13,9 @@ Check the topic you are interested in.
 
 ### Requirements
 
-- numpy
-- tqdm
+  - [`numpy`](https://numpy.org)
+  - [`tqdm`](https://pypi.python.org/pypi/tqdm)
+  - [`emcee`](https://github.com/dfm/emcee)
 
 ### Pip
 In the console type
@@ -32,7 +33,7 @@ python -m pip install -e .
 
 ---
 ## APT Sampler
-View the object detail [here](the-apt-sampler.md).
+View the object detail [here](../api.md).
 
 ---
 ## FAQ

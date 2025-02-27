@@ -1,4 +1,4 @@
-site_name: Reddemcee
+site_name: reddemcee
 site_description: Adaptative Parallel Tempering MCMC in python.
 site_author: Pablo A. Pena R.
 
@@ -7,9 +7,9 @@ site_url: !ENV READTHEDOCS_CANONICAL_URL
 
 nav:
   - Home: index.md
-  - User Guide: user-guide/README.md
+  - User Guide: user-guide/ug-README.md
   - Tutorials:
-      - Introduction: tutorials/README.md
+      - Introduction: tutorials/tut-README.md
       - Quickstart: tutorials/quickstart/quickstart.md
       - Fitting a model: tutorials/fitting_model/fitting_model.md
       - Temperatures & Adaptation: tutorials/temperatures/temperatures.md
@@ -57,10 +57,16 @@ theme:
 
 markdown_extensions:
   - pymdownx.superfences
-  - pymdownx.arithmatex
+  - pymdownx.arithmatex:
+      generic: true
 
 extra_javascript:
-  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+  - javascripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
+
+extra_css:
+  - https://unpkg.com/katex@0/dist/katex.min.css
 
 plugins:
   - search
@@ -76,7 +82,6 @@ extra:
     title: Cookie consent
     actions:
     - accept
-    - reject
     - manage
     description: >- 
       We use cookies to recognize your repeated visits and preferences, as well
