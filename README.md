@@ -18,6 +18,7 @@ This code makes use of:
   - [`numpy`](https://numpy.org)
   - [`tqdm`](https://pypi.python.org/pypi/tqdm)
   - [`emcee`](https://github.com/dfm/emcee)
+  - scipy
 
 `tqdm` is used to display progress bars on the terminal.
 `emcee` is used for calculating the autocorrelation times.
@@ -76,7 +77,7 @@ When setting up `PTSampler`, you can use the arguments:
 | tsw_history | bool    | Whether to store temperature swap history.                 |
 | adapt_tau   | float   | Halflife of adaptation hyper-parameter.                    |
 | adapt_nu    | float   | Rate of adaptation hyper-paramter.                         |
-| adapt_mode  | 0-3     | Mode of adaptation.                                        |
+| adapt_mode  | 0-4     | Mode of adaptation.                                        |
 
 The adaptation modes try to equalise the following quantity:
 
@@ -86,6 +87,7 @@ The adaptation modes try to equalise the following quantity:
 | 1    | Swap Mean Distance    |
 | 2    | Specific Heat         |
 | 3    | dE/sig                |
+| 4    | Thermodynamic Length  |
 
 
 # Additional Functions
@@ -95,6 +97,8 @@ Additional functions on the sampler include:
 |-----------------------------------|---------------------------------------------|
 | thermodynamic_integration_classic | Calculates evidence using trapezoidal rule. |
 | thermodynamic_integration         | Interpolates, uses Monte-Carlo integration. |
+| stepping_stones                   | Stepping Stones method                      |
+| hybrid_evidence                   | Hybrid method                               |
 | get_autocorr_time                 | Auto-correlation time.                      |
 | get_betas                         | Returns beta history                        |
 | get_chain                         | Returns chain                               |
