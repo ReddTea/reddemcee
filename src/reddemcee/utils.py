@@ -29,7 +29,7 @@ def thermodynamic_integration_classic(betas, logls):
     return logZ1, np.abs(logZ1 - logZ2)
 
 
-def thermodynamic_integration(betas, logls1, ngrid=10001, nsim=1000):
+def thermodynamic_integration_upd(betas, logls1, ngrid=10001, nsim=1001):
     """Calculates the evidence (Z) and its associated error using interpolation techniques. This method employs the PCHIP (Piecewise Cubic Hermite Interpolating Polynomial) method to estimate log-likelihood values across a specified range of beta values, incorporating random noise to simulate variability.
 
     Args:
@@ -46,7 +46,6 @@ def thermodynamic_integration(betas, logls1, ngrid=10001, nsim=1000):
     # Constants defined for this evaluation
     num_grid = ngrid
     num_simulations = nsim
-
 
     x = betas
     # Get LogL Means
@@ -70,9 +69,12 @@ def thermodynamic_integration(betas, logls1, ngrid=10001, nsim=1000):
     z_classic, zerr_classic = thermodynamic_integration_classic(x[::-1], y[::-1])
     err_disc = abs(z_classic - integral_trapz)
 
-    err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
-                                np.sum(std_interpolated[1:-1]**2) +
-                                1/4*std_interpolated[-1]**2)
+    h = np.diff(xnew)
+    err_samp = np.sum((h/2)**2 * (std_interpolated[1:]**2 +
+                                  std_interpolated[:-1]**2))
+    #err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
+    #                            np.sum(std_interpolated[1:-1]**2) +
+    #                            1/4*std_interpolated[-1]**2)
     err_samp = np.sqrt(err_samp)
     err = np.sqrt(err_disc**2+err_samp**2)
 
@@ -100,6 +102,134 @@ def interpolate(x, y, stdyn, num_grid, num_simulations):
     std_interpolated = np.std(interpolated_values, axis=0)
     return xnew, mean_interpolated, std_interpolated
 
+
+
+
+
+def interpolate_future(x, y, stdyn, num_grid, num_simulations):
+    from scipy.interpolate import PchipInterpolator
+    minx = min(x) or np.finfo(np.float32).eps
+    #xnew = np.linspace(minx, max(x), num_grid)
+    xnew = np.geomspace(minx, max(x), num_grid)
+    h = np.diff(xnew)
+    # Interpolated values storage
+    interpolated_values = np.zeros((num_simulations, num_grid))
+    interpolated_error = np.zeros(num_simulations)
+
+
+    for i in range(num_simulations):
+        # Perturb data with random noise based on errors
+        y_noisy = np.random.normal(y, stdyn)
+
+        # Create PchipInterpolator object with noisy data
+        pchip = PchipInterpolator(x, y_noisy)
+        pchip_deriv = pchip.derivative()
+
+        # Interpolate over fine grid and store results
+        interpolated_values[i, :] = pchip(xnew)
+        fprime_a = pchip_deriv(xnew)
+        # Vectorised finite differences to approximate the second derivative over each interval
+        diff_fprime = np.diff(fprime_a)      # f'(x[j+1]) - f'(x[j]) for each interval
+        fsecond = diff_fprime / h          # Approximate second derivative on each interval
+        
+        err_intervals = - (h**3 / 12) * fsecond
+        interpolated_error[i] = np.sum(np.abs(err_intervals))
+    
+    
+    mean_interpolated = np.mean(interpolated_values, axis=0)
+    std_interpolated = np.std(interpolated_values, axis=0)
+    return xnew, mean_interpolated, std_interpolated, interpolated_error
+
+def thermodynamic_integration(betas, logls, ngrid=101, nsim=1001):
+    from emcee.autocorr import integrated_time
+    # Constants defined for this evaluation
+    num_grid = ngrid
+    num_simulations = nsim
+
+    x = betas
+    yy = logls
+    # Get LogL Means
+    y = np.mean(yy, axis=1)
+
+    n = np.array([len(l) for l in yy])
+    tau = np.array([integrated_time(yy[i],
+                                    c=5,
+                                    tol=5,
+                                    quiet=False)
+                    for i in range(len(y))]).flatten()
+    neff = n/tau
+    stdyn = np.std(yy, axis=1, ddof=1) / np.sqrt(neff)
+    xnew, mean_interpolated, std_interpolated, error_interpolated = interpolate_future(x, y, stdyn, num_grid, num_simulations)
+
+    # Calculate Z
+    integral_trapz = np.trapz(mean_interpolated, xnew)
+
+    # Calculate Errors
+    z_classic, zerr_classic = thermodynamic_integration_classic(x[::-1], y[::-1])
+    err_disc = abs(z_classic - integral_trapz)
+
+    err_disc = np.mean(error_interpolated)
+
+    err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
+                                np.sum(std_interpolated[1:-1]**2) +
+                                1/4*std_interpolated[-1]**2)
+    
+    h = np.diff(xnew)
+    err_samp = np.sum((h/2)**2 * (std_interpolated[1:]**2+std_interpolated[:-1]**2))
+
+
+    err_samp = np.sqrt(err_samp)
+    err = np.sqrt(err_disc**2+err_samp**2)
+
+    return integral_trapz, err, err_disc, err_samp
+
+
+def stepping_stones(x1, y1,
+              nb_blocks=10):
+
+    unique_betas = np.unique(x1)
+    logZ = 0.0
+    variance_components = []
+    # We form stepping stones from temperature index 1 to ntemps-1.
+    for i in range(1, len(unique_betas)):
+        # Stepping stone: from beta_{i-1} to beta_i.
+        delta_beta = unique_betas[i] - unique_betas[i-1]
+        # Select all samples corresponding to the current beta level.
+        mask = (unique_betas[i-1] <= x1) & (x1 < unique_betas[i])
+        
+        # Get likelihoods for temperature i; shape: (nsweeps, nwalkers)
+        # For each sweep, average over walkers to get a weight
+        # (this produces a time series of length nsweeps).
+        weights = np.exp(delta_beta * y1[mask])
+        term = np.mean(weights)
+        # Full estimate: average over all sweeps.
+        logZ += np.log(term)
+
+        # Divide the sweeps into nb_blocks (using nearly equal sizes)
+        blocks = np.array_split(weights.flatten(), nb_blocks)
+        jackknife_estimates = []
+
+        for b in range(nb_blocks):
+            # Combine all blocks except block b.
+            remaining = np.concatenate([blocks[j] for j in range(nb_blocks) if j != b])
+            if remaining.size == 0:
+                raise ValueError("Block size or number of blocks is inappropriate.")
+            jk_mean = np.mean(remaining)
+            jackknife_estimates.append(np.log(jk_mean))
+        
+        jackknife_estimates = np.array(jackknife_estimates)
+        # Standard jackknife variance estimate.
+        jk_mean = np.mean(jackknife_estimates)
+        # Variance for this stepping stone.
+        var_i = (nb_blocks - 1) / nb_blocks * np.sum((jackknife_estimates - jk_mean)**2)
+        variance_components.append(var_i)
+
+    # Assuming independence of contributions from different stepping stones,
+    # the total variance is the sum of the individual variances.
+    total_variance = np.sum(variance_components)
+    err_logZ = np.sqrt(total_variance)
+    
+    return logZ, err_logZ
 
 
 temp_table = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,

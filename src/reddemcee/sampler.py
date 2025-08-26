@@ -23,6 +23,8 @@ from .utils import set_temp_ladder
 
 from tqdm import tqdm
 import numpy as np
+from emcee import autocorr
+
 
 class LadderAdaptation(object):
     def calc_decay(self):
@@ -52,14 +54,21 @@ class LadderAdaptation(object):
         """
         self.adjustment_fn = getattr(self, f'calc_adjust{option}')
 
+
+    def calc_adjust00(self):
+        # No adjustment
+        return np.zeros(self.ntemps-2)
+
     def calc_adjust0(self):
+        # Uniform Swap Acceptance Rate
         return -np.diff(self.ts_accepted)
     
     def calc_adjust1(self):
+        # Swap Mean Distance
         return -np.diff(self.smd)
     
     def calc_adjust2(self):
-        # CvL
+        # SGG
         logls = self.get_log_like(flat=True)[:, -1000:]
         db = -np.diff(self.betas)
         varL = np.var(logls, axis=1)
@@ -67,7 +76,8 @@ class LadderAdaptation(object):
         return -np.diff(a)
 
     def calc_adjust3(self):
-        # dE_m/sig_m
+        # dE_m/sig_m; rathore et al 2005
+        # SAO
         logls = self.get_log_like(flat=True)[:, -1000:]
         Esig = np.std(logls, axis=1)
         Emean = np.mean(logls, axis=1)
@@ -78,6 +88,100 @@ class LadderAdaptation(object):
         a = diffE/sigmean        
         return -np.diff(a)
 
+    def calc_adjust4(self):
+        '''THERMODYNAMIC LENGTH'''
+        betas = np.asarray(self.betas)
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        Esig = np.std(logls, axis=1)
+
+        dL = -np.diff(betas) * (Esig[1:] + Esig[:-1]) / 2
+
+        norm = -np.trapz(Esig, betas)/(len(betas)-1)
+        dLn = dL/norm
+
+        return np.diff(dLn)
+
+    def calc_adjust5(self):
+        E = np.mean(self.get_log_like(flat=True)[:, -1000:], axis=1)
+        dE = np.diff(E)
+        db = np.diff(self.betas)
+        logA = -dE * db
+
+        return -np.diff(logA)
+
+    def calc_adjust6(self):
+        # beta density
+        betas = np.asarray(self.betas)[:-1]
+        #t = 1/betas[:-1]
+        #gamma = t[1:]/t[:-1]
+        #nu = 1/np.log(gamma)
+        #tmean = (t[:-1] - t[1:]) / (np.log(t[:-1]) - np.log(t[1:]))
+        
+        nu = -1/np.diff(np.log(betas))
+        betamean = (betas[:-1] - betas[1:]) / (np.log(betas[:-1]) - np.log(betas[1:]))
+
+        # CvL
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        #Esig = np.std(logls, axis=1)[:-1]
+        Esig = np.std(logls, axis=1)[:-1]
+
+        Esigmean = (Esig[:-1] - Esig[1:]) / (np.log(Esig[:-1]) - np.log(Esig[1:]))
+        #cvmean = Esigmean / tmean
+        cvmean = Esigmean * betamean
+
+
+        #nu_norm = -np.trapz(tmean, nu)
+        #cv_norm = -np.trapz(tmean, sqrt_cvmean)
+        nu_norm = np.sum(nu)
+        cv_norm = np.sum(cvmean)
+        #print(f'{betas=}')
+        
+        nu_normed = nu / nu_norm
+        cv_normed = cvmean / cv_norm
+
+        #print(f'{nu_normed=}')
+        #print(f'{cv_normed=}')
+        #print(f'coso = {(nu_normed-cv_normed)}')
+        return (nu_normed-cv_normed)
+
+    def calc_adjust7(self):
+        # beta density
+        betas = np.asarray(self.betas)
+        betamean = (betas[:-1] + betas[1:]) / 2
+        nub = -1/np.diff(np.log(betas))
+
+
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        Esig = np.std(logls, axis=1)
+        #Esigmean = (Esig[:-1] - Esig[1:]) / (np.log(Esig[:-1]) - np.log(Esig[1:]))
+        Esigmean = (Esig[:-1] + Esig[1:]) / 2
+        #cvmean = Esigmean / tmean
+        cvmean = Esigmean * betamean
+
+
+        nub_norm = np.sum(nub)
+        cv_norm = np.sum(cvmean)
+
+        a = (nub/nub_norm)-(cvmean/cv_norm)
+        return -np.diff(a)
+
+    def calc_adjust8(self):
+        return -np.diff(np.log(self.ts_accepted))
+
+    def calc_adjust9(self):
+        # beta density
+        betas = np.asarray(self.betas)
+        logls = self.get_log_like(flat=True)[:, -1000:]
+        Esig = np.std(logls, axis=1)
+
+        dL = -np.diff(betas) * (Esig[1:] + Esig[:-1]) / 2
+
+        norm = -np.trapz(Esig, betas)/(len(betas)-1)
+        dLn = dL - norm
+        print(f'{dL=}')
+        print(f'{dLn=}')
+
+        return np.diff(dLn)
 
 
 class PTSampler(LadderAdaptation):
@@ -191,6 +295,8 @@ class PTSampler(LadderAdaptation):
 
         """
         self._check_sample_init(nsteps, store, thin_by)
+        # modify swap move in case of smd
+        #self._swap_move.D_ = self.D_
 
         # Interpret the input as a walker state.
         state = PTState(initial_state, copy=True)
@@ -281,13 +387,76 @@ class PTSampler(LadderAdaptation):
                     "been called."
                 )
             initial_state = self._previous_state
+        
+        #self.ntemps__ = initial_state.shape[0]
 
         results = None
-        for results in self.sample(initial_state, nsteps=nsteps, nsweeps=nsweeps, **kwargs):
+        for results in self.sample(initial_state,
+                                   nsteps=nsteps,
+                                   nsweeps=nsweeps,
+                                   **kwargs):
             pass
 
         # Store so that the ``initial_state=None`` case will work
         self._previous_state = results
+
+        return results
+
+
+    def run_auto_mcmc(self, initial_state, maxiter,
+                      init_steps=100, repeats=1, **kwargs):
+        """
+        Iterate :func:`sample` for ``nsweeps`` times ``nsteps`` iterations and return the result
+
+        Args:
+            initial_state (State or ndarray[nwalkers, ndim]): The initial state or position vector. Can also be
+                ``None`` to resume from where :func:``run_mcmc`` left off the
+                last time it executed.
+            nsteps (int): The number of steps to run.
+            nsweeps (int): The number of sweeps to run.
+
+
+        Other parameters are directly passed to :func:`sample`.
+
+        This method returns the most recent result from :func:`sample`.
+
+        """
+        if initial_state is None:
+            if self._previous_state is None:
+                raise ValueError(
+                    "Cannot have `initial_state=None` if run_mcmc has never "
+                    "been called."
+                )
+            initial_state = self._previous_state
+
+        self.steps_per_sweep = []
+        results = None
+        ns_ = 0
+        rp_ = 0
+        act = init_steps
+        while ns_ <= maxiter:
+            for results in self.sample(initial_state,
+                                    nsteps=act,
+                                    nsweeps=repeats,
+                                    **kwargs):
+                pass
+            ns_ += act
+            self.steps_per_sweep.append(act)
+            #if rp_ % repeats == 0:
+            x = self.backend[0].get_log_like(discard=ns_//2)
+            act = round(autocorr.integrated_time(x, tol=0)[0])
+            #act = round(self.backend[0].get_autocorr_time(tol=0)))
+            print(f'{ns_=} | {act=}')
+            #if remaining == 1:
+            #    self.select_adjustment(self.config_adaptation_mode)
+            #    remaining = int(np.mean(self.backend[0].get_autocorr_time(tol=0)))
+            #    print(f'{remaining=}')
+            #else:
+            #    self.select_adjustment('00')
+            #    remaining -= 1
+            # Store so that the ``initial_state=None`` case will work
+            
+            self._previous_state = results
 
         return results
 
@@ -378,7 +547,7 @@ class PTSampler(LadderAdaptation):
         return thermodynamic_integration_classic(self.betas, logls)
 
 
-    def thermodynamic_integration(self, **kwargs):
+    def thermodynamic_integration_upd(self, **kwargs):
         """Compute the thermodynamic evidence integral.
 
         This method calculates the thermodynamic evidence integral using numerical
@@ -391,7 +560,7 @@ class PTSampler(LadderAdaptation):
             (float): The thermodynamic evidence.
         """
 
-        from .utils import thermodynamic_integration
+        from .utils import thermodynamic_integration_upd
         # Sort Betas And Logls
         x = self.betas[::-1]
         logls0 = self.get_log_like(flat=True, **kwargs)
@@ -404,8 +573,86 @@ class PTSampler(LadderAdaptation):
             x = np.concatenate(([0], x))
             logls1 = np.concatenate(([logls1[0]], logls1))
 
-        return thermodynamic_integration(x, logls1, ngrid=self.z_ngrid, nsim=self.z_nsim)
+        return thermodynamic_integration_upd(x, logls1,
+                                         ngrid=self.z_ngrid, nsim=self.z_nsim)
     
+    def thermodynamic_integration(self, discard=0, nbetacut=0,
+                  ngrid=101, nsim=1001):
+        from .utils import thermodynamic_integration
+
+        x = self.get_betas(discard=discard)[:, -1][nbetacut:][::-1]
+        yy = self.get_log_like(flat=True,
+                               discard=discard)[nbetacut:][::-1]
+        
+        return thermodynamic_integration(x, yy, ngrid=ngrid, nsim=nsim)
+
+
+    def stepping_stones(self,
+                  discard=0,
+                  nbetacut=None,
+                  nb_blocks=10,
+                  ):
+        from .utils import stepping_stones
+        likes = self.get_log_like(discard=discard)   # shape: (ntemps, nsweeps, nwalkers)
+        betas = self.get_betas(discard=discard)        # shape: (ntemps, nsweeps)
+        ntemps, nsweeps, nwalkers = likes.shape
+        if nbetacut is None:
+            nbetacut = ntemps-1
+
+        x = betas.flatten()
+        y = likes.reshape(-1, nwalkers)
+
+        order = np.argsort(x)
+        x1 = x[order]
+        y1 = y[order]        
+
+        cutmask = x1 >= betas[nbetacut, -1]
+        x1 = x1[cutmask]
+        y1 = y1[cutmask]    
+    
+        return stepping_stones(x1, y1, nb_blocks=nb_blocks)
+
+
+    def hybrid_evidence(self,
+                    discard=0,
+                    discardti=None,
+                    discardss=None,
+                    nbetacut=None,
+                    ngrid=101, nsim=1001,
+                    nb_blocks=10):
+        if discardti is None:
+            discardti = discard
+        if discardss is None:
+            discardss = discard
+        if nbetacut is None:
+            xx = self.get_betas(discard=discardti)
+            yy = self.get_log_like(discard=discardti)
+            x = xx[:, -1]
+            y = np.mean(np.mean(yy, axis=2), axis=1)
+
+            cuad = -np.diff(x) * y[:-1]
+            triang = -np.diff(x) * (y[1:]-y[:-1])/2
+            mask = cuad>=triang * 2
+            max_index = np.argmax(-1/np.diff(np.log(x[:-1])))
+            mask = x < x[max_index]
+            nbetacut = np.sum(mask)            
+        
+        if nbetacut==self.ntemps-1:
+            thermo = 0, 0
+        else:
+            thermo = self.thermodynamic_integration(discard=discardti,
+                                    nbetacut=nbetacut,
+                                    ngrid=ngrid,
+                                    nsim=nsim
+                                    )
+        zti, ztierr = thermo[0], thermo[1]
+        zss, zsserr = self.stepping_stones(discard=discardss,
+                                     nbetacut=nbetacut,
+                                     nb_blocks=nb_blocks,
+                                     )
+        
+        return zti+zss, np.sqrt(ztierr**2 + zsserr**2)
+
 
     def get_autocorr_time(self, **kwargs):
         """Get the estimated autocorrelation time.
@@ -646,6 +893,7 @@ class PTSampler(LadderAdaptation):
     @property
     def iteration(self):
         return self.backend.iteration
+
 
     @property
     def acceptance_fraction(self):
