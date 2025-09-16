@@ -10,226 +10,426 @@
 
 import numpy as np
 
-def thermodynamic_integration_classic(betas, logls):
-    """Calculate thermodynamical integration according to Vousden et al """
-    if betas[-1] != 0:
-        betas1 = np.concatenate((betas, [0]))
-        betas2 = np.concatenate((betas[::2], [0]))
-        logls1 = np.concatenate((logls, [logls[-1]]))
-        logls2 = np.concatenate((logls[::2], [logls[-1]]))
-    else:
-        betas1 = betas
-        betas2 = np.concatenate((betas1[:-1:2], [0]))
-        logls1 = logls
-        logls2 = np.concatenate((logls1[:-1:2], [logls1[-1]]))
+# OBM helpers
 
-    logZ1 = -np.trapz(logls1, betas1)
-    logZ2 = -np.trapz(logls2, betas2)
-
-    return logZ1, np.abs(logZ1 - logZ2)
-
-
-def thermodynamic_integration_upd(betas, logls1, ngrid=10001, nsim=1001):
-    """Calculates the evidence (Z) and its associated error using interpolation techniques. This method employs the PCHIP (Piecewise Cubic Hermite Interpolating Polynomial) method to estimate log-likelihood values across a specified range of beta values, incorporating random noise to simulate variability.
-
-    Args:
-        **kwargs: Additional keyword arguments passed to the log-likelihood function.
-
-    Returns:
-        tuple: A tuple containing:
-            - integral_trapz (float): The calculated evidence (Z).
-            - err (float): The total error associated with the evidence.
-            - err_disc (float): The discretization error.
-            - err_samp (float): The sampling error.
+def _obm_univariate(y, batch_size=None):
     """
-    from emcee.autocorr import integrated_time
-    # Constants defined for this evaluation
-    num_grid = ngrid
-    num_simulations = nsim
+    Univariate OBM estimator of the long-run variance Sig for
+    a stationary scalar time series {y_t}.
+    Returns Sig so that Var(y) ~ Sig / nsweeps
+    """
+    y = np.asarray(y, dtype=float)
+    T = y.size
+    if T < 3:
+        raise ValueError('Need at least 3 sweeps for OBM')
+    b = int(np.floor(T**0.5)) if batch_size is None else int(batch_size)
+    b = max(2, min(b, T - 1))
+    K = T - b + 1
 
-    x = betas
-    # Get LogL Means
-    y = np.mean(logls1, axis=1)
-
-    # Support Variables
-    # TODO extract this method? autocorr outside
-    n = np.array([len(l) for l in logls1])
-    tau = np.array([integrated_time(logls1[i], c=5, tol=5, quiet=False)
-                    for i in range(len(y))]).flatten()
-
-    neff = n/tau
-    stdyn = np.std(logls1, axis=1, ddof=1) / np.sqrt(neff)
-
-    # Get Interpolated Values
-    xnew, mean_interpolated, std_interpolated = interpolate(x, y, stdyn, num_grid, num_simulations)
-    # Calculate Z
-    integral_trapz = np.trapz(mean_interpolated, xnew)
-
-    # Calculate Errors
-    z_classic, zerr_classic = thermodynamic_integration_classic(x[::-1], y[::-1])
-    err_disc = abs(z_classic - integral_trapz)
-
-    h = np.diff(xnew)
-    err_samp = np.sum((h/2)**2 * (std_interpolated[1:]**2 +
-                                  std_interpolated[:-1]**2))
-    #err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
-    #                            np.sum(std_interpolated[1:-1]**2) +
-    #                            1/4*std_interpolated[-1]**2)
-    err_samp = np.sqrt(err_samp)
-    err = np.sqrt(err_disc**2+err_samp**2)
-
-    return integral_trapz, err, err_disc, err_samp
+    mu = y.mean()
+    csum = np.concatenate(([0.0], np.cumsum(y)))
+    bm = (csum[b:] - csum[:-b]) / b
+    diff = bm - mu
+    # long-run variance estimator
+    Sigma_hat = (b / K) * np.dot(diff, diff)
+    return Sigma_hat
 
 
-def interpolate(x, y, stdyn, num_grid, num_simulations):
+def _obm_multivariate(Y, batch_size=None):
+    """
+    Multivariate OBM estimator for the long-run covariance Sig
+    of a vector time series Y (shape: nsweeps, ntemps).
+    Returns Sig so Var(Y) ≈ Sig / nsweeps
+    """
+    Y = np.asarray(Y, dtype=float)
+    T, p = Y.shape
+    if T < 3:
+        raise ValueError('Need at least 3 sweeps for OBM')
+    b = int(np.floor(T**0.5)) if batch_size is None else int(batch_size)
+    b = max(2, min(b, T - 1))
+    K = T - b + 1
+
+    mu_hat = Y.mean(axis=0)
+    csum = np.vstack([np.zeros((1, p)), np.cumsum(Y, axis=0)])
+    bm = (csum[b:] - csum[:-b]) / b
+    diff = bm - mu_hat
+    Sigma_hat = (b / K) * diff.T @ diff
+    return Sigma_hat
+
+
+# Spectral helpers
+def _autocovariances(y, maxlag):
+    y = np.asarray(y, dtype=float)
+    T = y.size
+    mu = y.mean()
+    z = y - mu
+    gammas = np.empty(maxlag + 1, dtype=float)
+    gammas[0] = np.dot(z, z) / T
+    for k in range(1, maxlag + 1):
+        gammas[k] = np.dot(z[k:], z[:-k]) / T
+    return gammas
+
+def _kernel_weights(kernel, b):
+    k = np.arange(1, b + 1, dtype=float)
+    if kernel == "bartlett":  # Newey–West
+        w = 1.0 - k / (b + 1.0)
+    elif kernel == "parzen":
+        x = k / (b + 0.0)
+        w = np.where(
+            x <= 0.5,
+            1 - 6*x**2 + 6*x**3,
+            2*(1 - x)**3
+        )
+        w[x > 1] = 0.0
+    elif kernel in {"tukey", "hann", "tukey-hanning", "tukeyhanning"}:
+        # Cosine (Hann) lag window: w_b = 0, w_0 = 1
+        w = 0.5 * (1 + np.cos(np.pi * k / (b + 0.0)))
+    else:
+        raise ValueError(f"Unknown kernel '{kernel}'")
+    w[w < 0] = 0.0
+    return w
+
+def _spe_univariate(y, bandwidth=None, kernel="bartlett", prewhiten=False):
+    """
+    Estimate long-run variance Sig = f(0) via HAC (spectral density at zero).
+    Var(y) ~ Sig / T.
+    - kernel: 'bartlett' (Newey–West), 'parzen', or 'tukey' (Hann).
+    - bandwidth: max lag b; if None, auto b = max(2, floor(2*T**(1/3))).
+    - prewhiten: simple AR(1) prewhitening
+    """
+    y = np.asarray(y, dtype=float)
+    T = y.size
+    if T < 3:
+        raise ValueError("Need at least 3 observations for spectral HAC.")
+
+    if prewhiten:
+        y0 = y - y.mean()
+        num = np.dot(y0[1:], y0[:-1])
+        den = np.dot(y0, y0)
+        rho = 0.0 if den == 0 else np.clip(num / den, -0.97, 0.97)
+        v = y[1:] - rho * y[:-1]
+        Sigma_v = _spe_univariate(v, bandwidth=bandwidth, kernel=kernel, prewhiten=False)
+        return Sigma_v / (1.0 - rho)**2
+
+    b = int(np.floor(2 * T**(1/3))) if bandwidth is None else int(bandwidth)
+    b = max(2, min(b, T - 1))
+
+    gam = _autocovariances(y, b)
+    w = _kernel_weights(kernel, b)
+    Sigma = gam[0] + 2.0 * np.dot(w, gam[1:])
+
+    return float(max(Sigma, 0.0))
+
+def _spe_multivariate(Y, bandwidth=None, kernel="bartlett"):
+    """
+    Multivariate HAC estimator of the long-run covariance
+    matrix Sig for a vector time series Y (nsweeps, ntemps).
+
+    Returns Sig so Var(Y) ~ Sig/ nsweeps
+    """
+    Y = np.asarray(Y, dtype=float)
+    if Y.ndim != 2:
+        raise ValueError("Y must be 2D: (nsweeps, nsteps).")
+    T, p = Y.shape
+    if T < 3:
+        raise ValueError("Need at least 3 sweeps for spectral HAC.")
+
+    b = int(np.floor(2 * T**(1/3))) if bandwidth is None else int(bandwidth)
+    b = max(2, min(b, T - 1))
+
+    Z = Y - Y.mean(axis=0, keepdims=True)
+    Gam0 = (Z.T @ Z) / T
+
+    
+    weights = _kernel_weights(kernel, b)
+    Sigma = Gam0.copy()
+    for k, wk in enumerate(weights, start=1):
+        Zk = Z[k: , :]
+        Z0 = Z[:-k, :]
+        Gamk = (Zk.T @ Z0) / T
+        Sigma += wk * (Gamk + Gamk.T)
+
+    # numerical symmetrization, better stability
+    Sigma = 0.5 * (Sigma + Sigma.T)
+    return Sigma
+
+
+# general helpers
+
+def order_by_betas(B, L):
+    B_sorted = B[::-1]
+    L_sorted = L[::-1, :, :]
+    return B_sorted, L_sorted
+
+def _coarse_rows(a):
+    if a.size == 0:
+        return a
+    base = a[::2, :]
+    return base if len(a) % 2 == 1 else np.vstack([base, a[-1, :]])
+
+def _coarse_rows_drop_hot(a):
+    if a.size == 0:
+        return a
+    base = a[::2, :]
+    return base if len(a) % 2 == 1 else a[1::2, :]
+
+def _logmeanexp(x, axis=None):
+    # numerical stability
+    a = np.max(x, axis=axis, keepdims=True)
+    return (a + np.log(np.mean(np.exp(x - a), axis=axis, keepdims=True))).squeeze()
+
+
+# actual utility
+def get_act_from_obm(y, batch_size=None, ddof=1):
+    Sigma = _obm_univariate(y, batch_size)
+    s2 = np.var(y, ddof=ddof)
+    tau = Sigma / s2
+    ESS = y.size / tau
+    return tau, ESS
+
+
+# pchip helper
+def _pchip_integral_series_cut(B, L, cut_low, cut_high):
+    """
+    Per-sweep PCHIP integrals using the *full ladder* but
+    integrating from cut_low to cut_high.
+
+    Returns the evidence integral.
+    """
     from scipy.interpolate import PchipInterpolator
-    xnew = np.linspace(min(x), max(x), num_grid)
+    ntemps, nsweeps = B.shape
+    z = np.zeros(nsweeps, dtype=float)
+
+    for t in range(nsweeps):
+        bt = B[:, t]
+        ut = L[:, t]
+        # collapse duplicates
+        xu, inv = np.unique(bt, return_inverse=True)
+        if xu.size != bt.size:
+            uu = np.zeros_like(xu)
+            for k in range(xu.size):
+                uu[k] = ut[inv == k].mean()
+            bt, ut = xu, uu
+
+        if bt.size < 2:
+            z[t] = 0.0
+            continue
+
+        # clamp cut index to valid segment range
+        #ci = min(max(cut_index, 0), bt.size - 1)
+        a = max(cut_low, bt[0])
+        b = min(cut_high, bt[-1])
+        if a >= b:
+            z[t] = 0.0
+            continue
+
+        f = PchipInterpolator(bt, ut, extrapolate=False)
+        z[t] = float(f.integrate(a, b))  # positive integral
+    #print(a, b)
+    return z
+
+
+
+# SS helpers
+def _ss_classic(B, L, fixed_ladder):
+    ntemps, nsweeps = B.shape
+
+    # Set up for SS
+    m = ntemps-1
+    W_series = np.empty((nsweeps, m), dtype=float)
+    # Sampling Error
+    if fixed_ladder:
+        delta = (B[1:, :].mean(axis=1) - B[:-1, :].mean(axis=1))  # (m,)
+        for i in range(m):  # ratio i uses base temperature index i
+            s = delta[i] * L[i, :, :]  # (nsweeps, nwalkers)
+            a = np.max(s, axis=1, keepdims=True)  # log-sum-exp stabilizer
+            W_series[:, i] = np.exp(a).ravel() * np.mean(np.exp(s - a), axis=1)
+    else:
+        # Use per-sweep delta beta
+        for i in range(m):
+            dbeta_t = B[i+1, :] - B[i, :]  # (nsweeps,)
+            s = dbeta_t[:, None] * L[i, :, :]  # (nsweeps, nwalkers)
+            a = np.max(s, axis=1, keepdims=True)
+            W_series[:, i] = np.exp(a).ravel() * np.mean(np.exp(s - a), axis=1)
+
+    mu_hat = W_series.mean(axis=0)
+    z_hat = np.sum(np.log(mu_hat))
+
+    # grad
+    grad = 1.0 / mu_hat  # for var
+
+    return z_hat, W_series, grad
+
+
+def _ss_bridge(B, L, fixed_ladder):
+    ntemps, nsweeps = B.shape
+
+    # Set up for SS
+    m = ntemps-1
+
+    logA_series = np.empty((nsweeps, m), dtype=float)
+    logC_series = np.empty((nsweeps, m), dtype=float)
+
+    # Sampling Error
+    if fixed_ladder:
+        # Robust constant delta-beta (average in case of tiny jitter)
+        delta = (B[1:, :].mean(axis=1) - B[:-1, :].mean(axis=1))  # (m,)
+        half = 0.5 * delta
+        for i in range(m):
+            # per-sweep log-mean-exp across walkers delta-beta i, i+1
+            sA = half[i] * L[i, :, :]  # (nsweeps, nwalkers)
+            sC = -half[i] * L[i+1, :, :]
+            logA_series[:, i] = _logmeanexp(sA, axis=1)
+            logC_series[:, i] = _logmeanexp(sC, axis=1)
+    else:
+        for i in range(m):
+            dbeta_t = B[i+1, :] - B[i, :]  # (nsweeps,)
+            sA = (0.5 * dbeta_t)[:, None] * L[i, :, :]
+            sC = (-0.5 * dbeta_t)[:, None] * L[i+1, :, :]
+            logA_series[:, i] = _logmeanexp(sA, axis=1)
+            logC_series[:, i] = _logmeanexp(sC, axis=1)
+
+    # Convert to linear means per stone across sweeps
+    A_series = np.exp(logA_series)  # (nsweeps, m)
+    C_series = np.exp(logC_series)
+    muA = A_series.mean(axis=0)  # (m,)
+    muC = C_series.mean(axis=0)
     
-    # Interpolated values storage
-    interpolated_values = np.zeros((num_simulations, num_grid))
-
-    for i in range(num_simulations):
-        # Perturb data with random noise based on errors
-        y_noisy = y + np.random.normal(0, stdyn)
-
-        # Create PchipInterpolator object with noisy data
-        pchip = PchipInterpolator(x, y_noisy)
-
-        # Interpolate over fine grid and store results
-        interpolated_values[i, :] = pchip(xnew)
+    # Bridge estimate
+    z_hat = float(np.sum(np.log(muA) - np.log(muC)))
     
-    mean_interpolated = np.mean(interpolated_values, axis=0)
-    std_interpolated = np.std(interpolated_values, axis=0)
-    return xnew, mean_interpolated, std_interpolated
+    W_series = np.hstack([A_series, C_series])  # (nsweeps, 2m)
+    # grad
+    grad = np.concatenate([1.0 / muA, -1.0 / muC])  # for var
+
+
+
+    return z_hat, W_series, grad
 
 
 
 
 
-def interpolate_future(x, y, stdyn, num_grid, num_simulations):
-    from scipy.interpolate import PchipInterpolator
-    minx = min(x) or np.finfo(np.float32).eps
-    #xnew = np.linspace(minx, max(x), num_grid)
-    xnew = np.geomspace(minx, max(x), num_grid)
-    h = np.diff(xnew)
-    # Interpolated values storage
-    interpolated_values = np.zeros((num_simulations, num_grid))
-    interpolated_error = np.zeros(num_simulations)
+
+# actual TI
+
+def get_ti(B, L, pchip=True, ba=None, bb=None, fixed_ladder=True,
+           mode='obm', batch_size=None, spe_kernel='bartlett'):
+    B, L = order_by_betas(B, L)
+    L = L.mean(axis=2)  # shape=(ntemps,nsweeps)
+
+    ntemps, nsweeps = B.shape
+    ba, bb = ba, bb
+    if ba is None:
+        ba = 0
+    if bb is None:
+        bb = ntemps-1
+
+    if batch_size == None:
+        batch_size = int(np.sqrt(ntemps))
+
+    # Get integration beta interval
+    if pchip:
+        cut_low = B[:, -1][ba]
+        cut_high = B[:, -1][bb]
+
+        z_t = _pchip_integral_series_cut(B, L, cut_low, cut_high)  # (nsweeps,)
+        B2 = _coarse_rows(B)
+        L2 = _coarse_rows(L)
+        z2_t = _pchip_integral_series_cut(B2, L2, cut_low, cut_high)  # (nsweeps,)
+
+    else:
+        B = B[ba:bb+1, :]
+        L = L[ba:bb+1, :]
+
+        z_t = np.trapz(L, B, axis=0)    # (nsweeps,)
+        B2 = _coarse_rows_drop_hot(B)
+        L2 = _coarse_rows_drop_hot(L)
+        z2_t = np.trapz(L2, B2, axis=0)    # (nsweeps,)
 
 
-    for i in range(num_simulations):
-        # Perturb data with random noise based on errors
-        y_noisy = np.random.normal(y, stdyn)
+    # Evidence estimate
+    z_hat = z_t.mean()
 
-        # Create PchipInterpolator object with noisy data
-        pchip = PchipInterpolator(x, y_noisy)
-        pchip_deriv = pchip.derivative()
+    # Discretisation error
+    z2_hat  = z2_t.mean()
+    err_disc = z2_hat-z_hat
 
-        # Interpolate over fine grid and store results
-        interpolated_values[i, :] = pchip(xnew)
-        fprime_a = pchip_deriv(xnew)
-        # Vectorised finite differences to approximate the second derivative over each interval
-        diff_fprime = np.diff(fprime_a)      # f'(x[j+1]) - f'(x[j]) for each interval
-        fsecond = diff_fprime / h          # Approximate second derivative on each interval
+    # Sampling Error
+    if mode == 'obm':
+        if fixed_ladder:
+            Sigma_hat = _obm_univariate(z_t, batch_size=batch_size)  # long-run variance
+            err_MC = np.sqrt(Sigma_hat / z_t.size)
+        # multivariate
+        else:
+            S = 0.5 * (L[:-1, :] + L[1:, :])  # (ntemps-1, nsweeps)
+            dB = B[1:, :] - B[:-1, :]  # (ntemps-1, nsweeps)
+            W_series = (-dB).T  # (nsweeps, ntemps-1)
+            S_series = S.T  # (nsweeps, ntemps-1)
+
+            # mOBM on S_series to estimate Sig_S
+            Sigma_S = _obm_multivariate(S_series, batch_size=batch_size)
+
+            # Propagate with the *average* per-sweep weights (diminishing adaptation)
+            vbar = W_series.mean(axis=0)
+            Sigma_hat = float(vbar @ Sigma_S @ vbar)
+            err_MC = np.sqrt(Sigma_hat / nsweeps)
+
+    elif mode == 'spe':
+        if fixed_ladder:
+            Sigma_LR = _spe_univariate(z_t, bandwidth=None, kernel=spe_kernel, prewhiten=False)
+            err_MC = np.sqrt(Sigma_LR / z_t.size)
+        # multivariate
+        else:
+            S = 0.5 * (L[:-1, :] + L[1:, :])
+            dB = B[1:, :] - B[:-1, :]
+            vbar = (-dB).mean(axis=1)
+            S_series = S.T
+
+            Sigma_S = _spe_multivariate(S_series, bandwidth=None, kernel=spe_kernel)
+            Sigma_z = float(vbar @ Sigma_S @ vbar)
+            Sigma_z = max(Sigma_z, 0.0)
+            err_MC = float(np.sqrt(Sigma_z / nsweeps))        
+
+
+
+
+    # Combine with discretization error
+    err_tot = np.sqrt(err_disc**2 + err_MC**2)
+    return z_hat, err_tot
+
+
+def get_ss(B, L, bridge=True, ba=None, bb=None, fixed_ladder=True,
+           mode='obm', batch_size=None, spe_kernel='bartlett'):
+    B, L = order_by_betas(B, L)
+    ntemps, nsweeps = B.shape
+    ba, bb = ba, bb
+    if ba is None:
+        ba = 0
+    if bb is None:
+        bb = ntemps
+
+    B = B[ba:bb+1, :]
+    L = L[ba:bb+1, :, :]
+
+    if bridge:
+        z_hat, W_series, grad = _ss_bridge(B, L, fixed_ladder)
+    else:
+        z_hat, W_series, grad = _ss_classic(B, L, fixed_ladder)
+
         
-        err_intervals = - (h**3 / 12) * fsecond
-        interpolated_error[i] = np.sum(np.abs(err_intervals))
-    
-    
-    mean_interpolated = np.mean(interpolated_values, axis=0)
-    std_interpolated = np.std(interpolated_values, axis=0)
-    return xnew, mean_interpolated, std_interpolated, interpolated_error
-
-def thermodynamic_integration(betas, logls, ngrid=101, nsim=1001):
-    from emcee.autocorr import integrated_time
-    # Constants defined for this evaluation
-    num_grid = ngrid
-    num_simulations = nsim
-
-    x = betas
-    yy = logls
-    # Get LogL Means
-    y = np.mean(yy, axis=1)
-
-    n = np.array([len(l) for l in yy])
-    tau = np.array([integrated_time(yy[i],
-                                    c=5,
-                                    tol=5,
-                                    quiet=False)
-                    for i in range(len(y))]).flatten()
-    neff = n/tau
-    stdyn = np.std(yy, axis=1, ddof=1) / np.sqrt(neff)
-    xnew, mean_interpolated, std_interpolated, error_interpolated = interpolate_future(x, y, stdyn, num_grid, num_simulations)
-
-    # Calculate Z
-    integral_trapz = np.trapz(mean_interpolated, xnew)
-
-    # Calculate Errors
-    z_classic, zerr_classic = thermodynamic_integration_classic(x[::-1], y[::-1])
-    err_disc = abs(z_classic - integral_trapz)
-
-    err_disc = np.mean(error_interpolated)
-
-    err_samp = 1/num_grid**2 * (1/4*std_interpolated[0]**2 +
-                                np.sum(std_interpolated[1:-1]**2) +
-                                1/4*std_interpolated[-1]**2)
-    
-    h = np.diff(xnew)
-    err_samp = np.sum((h/2)**2 * (std_interpolated[1:]**2+std_interpolated[:-1]**2))
+    if mode=='obm':
+        Sigma_hat = _obm_multivariate(W_series, batch_size=batch_size)
+    elif mode=='spe':
+        Sigma_hat = _spe_multivariate(W_series, bandwidth=None, kernel="bartlett")
 
 
-    err_samp = np.sqrt(err_samp)
-    err = np.sqrt(err_disc**2+err_samp**2)
+    cov_bar = Sigma_hat / nsweeps
+    var_logZ = float(grad @ cov_bar @ grad)
+    err_MC = np.sqrt(max(0.0, var_logZ))
 
-    return integral_trapz, err, err_disc, err_samp
+    return z_hat, err_MC
 
-
-def stepping_stones(x1, y1,
-              nb_blocks=10):
-
-    unique_betas = np.unique(x1)
-    logZ = 0.0
-    variance_components = []
-    # We form stepping stones from temperature index 1 to ntemps-1.
-    for i in range(1, len(unique_betas)):
-        # Stepping stone: from beta_{i-1} to beta_i.
-        delta_beta = unique_betas[i] - unique_betas[i-1]
-        # Select all samples corresponding to the current beta level.
-        mask = (unique_betas[i-1] <= x1) & (x1 < unique_betas[i])
-        
-        # Get likelihoods for temperature i; shape: (nsweeps, nwalkers)
-        # For each sweep, average over walkers to get a weight
-        # (this produces a time series of length nsweeps).
-        weights = np.exp(delta_beta * y1[mask])
-        term = np.mean(weights)
-        # Full estimate: average over all sweeps.
-        logZ += np.log(term)
-
-        # Divide the sweeps into nb_blocks (using nearly equal sizes)
-        blocks = np.array_split(weights.flatten(), nb_blocks)
-        jackknife_estimates = []
-
-        for b in range(nb_blocks):
-            # Combine all blocks except block b.
-            remaining = np.concatenate([blocks[j] for j in range(nb_blocks) if j != b])
-            if remaining.size == 0:
-                raise ValueError("Block size or number of blocks is inappropriate.")
-            jk_mean = np.mean(remaining)
-            jackknife_estimates.append(np.log(jk_mean))
-        
-        jackknife_estimates = np.array(jackknife_estimates)
-        # Standard jackknife variance estimate.
-        jk_mean = np.mean(jackknife_estimates)
-        # Variance for this stepping stone.
-        var_i = (nb_blocks - 1) / nb_blocks * np.sum((jackknife_estimates - jk_mean)**2)
-        variance_components.append(var_i)
-
-    # Assuming independence of contributions from different stepping stones,
-    # the total variance is the sum of the individual variances.
-    total_variance = np.sum(variance_components)
-    err_logZ = np.sqrt(total_variance)
-    
-    return logZ, err_logZ
 
 
 temp_table = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,
@@ -253,6 +453,7 @@ temp_table = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,
                       1.27397, 1.27227, 1.27061, 1.26898, 1.26737,
                       1.26579, 1.26424, 1.26271, 1.26121,
                       1.25973])
+
 
 
 def set_temp_ladder(ntemps, ndims, temp_table=temp_table):

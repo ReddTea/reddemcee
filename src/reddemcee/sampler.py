@@ -527,131 +527,123 @@ class PTSampler(LadderAdaptation):
                            smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
 
 
-    def thermodynamic_integration_classic(self, **kwargs):
-        """Compute the thermodynamic evidence integral using the classic method.
+    def get_evidence_ti(self, discard=0, mode='obm',
+                        ba=None, bb=None, pchip=True,
+                        fixed_ladder=True, batch_size=None,
+                        spe_kernel='bartlett'):
 
-        This method calculates the thermodynamic evidence integral using the classic
-        method, which involves averaging the log-likelihoods over the samples at different
-        temperatures.
+        L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
+        B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)
 
-        Args:
-            **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
-
-        Returns:
-            (float): The thermodynamic evidence.
-        """        
-        from .utils import thermodynamic_integration_classic
-        logls0 = self.get_log_like(flat=True, **kwargs)
-        logls = np.mean(logls0, axis=1)
-
-        return thermodynamic_integration_classic(self.betas, logls)
+        from .utils import get_ti
+        return get_ti(B, L,
+                      pchip=pchip,
+                      ba=ba,
+                      bb=bb,
+                      fixed_ladder=fixed_ladder,
+                      mode=mode,
+                      batch_size=batch_size,
+                      spe_kernel=spe_kernel)
 
 
-    def thermodynamic_integration_upd(self, **kwargs):
-        """Compute the thermodynamic evidence integral.
+    def get_evidence_ss(self, discard=0, mode='obm',
+                        ba=None, bb=None, bridge=True,
+                        fixed_ladder=True, batch_size=None,
+                        spe_kernel='bartlett'):
 
-        This method calculates the thermodynamic evidence integral using numerical
-        integration of the average log-likelihood at different temperatures.
+        L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
+        B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)
+
+        from .utils import get_ss
+        return get_ss(B, L,
+                      mode=mode,
+                      ba=ba, bb=bb, bridge=bridge,
+                      fixed_ladder=fixed_ladder, batch_size=batch_size,
+                      spe_kernel=spe_kernel)
+
+
+    def get_evidence_hybrid(self, discard=0, nbetacut=None,
+                            nbetacut_crit='max',
+                            ti_args=None, ss_args=None):
+        if ti_args is None:
+            ti_args = {'mode':'obm',
+                       'ba':None, 'bb':None, 'pchip':True,
+                       'fixed_ladder':True, 'batch_size':None,
+                       'spe_kernel':'bartlett'}
+
+        if ss_args is None:
+            ss_args = {'mode':'obm',
+                       'ba':None, 'bb':None, 'bridge':True,
+                       'fixed_ladder':True, 'batch_size':None,
+                       'spe_kernel':'bartlett'}
+
+
+        L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
+        B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)    
+
         
-        Args:
-            **kwargs (Optional[dict]): Additional keyword arguments passed to `get_log_like`.
 
-        Returns:
-            (float): The thermodynamic evidence.
-        """
-
-        from .utils import thermodynamic_integration_upd
-        # Sort Betas And Logls
-        x = self.betas[::-1]
-        logls0 = self.get_log_like(flat=True, **kwargs)
-        logls1 = logls0[::-1]
-
-        # if hot chain beta !=0, add it
-        # we approximate it's value to logls1[0]
-        # TODO add an option so this value can be provided
-        if x[0] != 0:
-            x = np.concatenate(([0], x))
-            logls1 = np.concatenate(([logls1[0]], logls1))
-
-        return thermodynamic_integration_upd(x, logls1,
-                                         ngrid=self.z_ngrid, nsim=self.z_nsim)
-    
-    def thermodynamic_integration(self, discard=0, nbetacut=0,
-                  ngrid=101, nsim=1001):
-        from .utils import thermodynamic_integration
-
-        x = self.get_betas(discard=discard)[:, -1][nbetacut:][::-1]
-        yy = self.get_log_like(flat=True,
-                               discard=discard)[nbetacut:][::-1]
-        
-        return thermodynamic_integration(x, yy, ngrid=ngrid, nsim=nsim)
-
-
-    def stepping_stones(self,
-                  discard=0,
-                  nbetacut=None,
-                  nb_blocks=10,
-                  ):
-        from .utils import stepping_stones
-        likes = self.get_log_like(discard=discard)   # shape: (ntemps, nsweeps, nwalkers)
-        betas = self.get_betas(discard=discard)        # shape: (ntemps, nsweeps)
-        ntemps, nsweeps, nwalkers = likes.shape
         if nbetacut is None:
-            nbetacut = ntemps-1
-
-        x = betas.flatten()
-        y = likes.reshape(-1, nwalkers)
-
-        order = np.argsort(x)
-        x1 = x[order]
-        y1 = y[order]        
-
-        cutmask = x1 >= betas[nbetacut, -1]
-        x1 = x1[cutmask]
-        y1 = y1[cutmask]    
-    
-        return stepping_stones(x1, y1, nb_blocks=nb_blocks)
-
-
-    def hybrid_evidence(self,
-                    discard=0,
-                    discardti=None,
-                    discardss=None,
-                    nbetacut=None,
-                    ngrid=101, nsim=1001,
-                    nb_blocks=10):
-        if discardti is None:
-            discardti = discard
-        if discardss is None:
-            discardss = discard
-        if nbetacut is None:
-            xx = self.get_betas(discard=discardti)
-            yy = self.get_log_like(discard=discardti)
-            x = xx[:, -1]
-            y = np.mean(np.mean(yy, axis=2), axis=1)
-
-            cuad = -np.diff(x) * y[:-1]
-            triang = -np.diff(x) * (y[1:]-y[:-1])/2
-            mask = cuad>=triang * 2
-            max_index = np.argmax(-1/np.diff(np.log(x[:-1])))
-            mask = x < x[max_index]
-            nbetacut = np.sum(mask)            
-        
-        if nbetacut==self.ntemps-1:
-            thermo = 0, 0
+            if nbetacut_crit == 'max':
+                all_cuts = self._hybrid_max(B)
+                        #print(f'{max_index=}')
+            elif nbetacut_crit=='tri':
+                all_cuts = self._hybrid_tri(B, L)
+                        #print(max_index)
+            else:
+                print('MODE NOT DETECTED')
         else:
-            thermo = self.thermodynamic_integration(discard=discardti,
-                                    nbetacut=nbetacut,
-                                    ngrid=ngrid,
-                                    nsim=nsim
-                                    )
-        zti, ztierr = thermo[0], thermo[1]
-        zss, zsserr = self.stepping_stones(discard=discardss,
-                                     nbetacut=nbetacut,
-                                     nb_blocks=nb_blocks,
-                                     )
+            all_cuts = self._hybrid_def(nbetacut)
         
-        return zti+zss, np.sqrt(ztierr**2 + zsserr**2)
+        ti_args['ba'] = all_cuts[0]
+        ti_args['bb'] = all_cuts[1]
+
+        ss_args['ba'] = all_cuts[2]
+        ss_args['bb'] = all_cuts[3]
+
+        from .utils import get_ss, get_ti
+
+        zti, ztierr = get_ti(B, L, **ti_args)
+
+        zss, zsserr = get_ss(B, L, **ss_args)
+
+        z_hat = zti + zss
+        err_tot = np.sqrt(zsserr**2 + ztierr**2)
+
+        return z_hat, err_tot
+
+
+
+
+    def _hybrid_max(self, B):
+        betas = B[::-1, -1]
+        if betas[0] == 0:
+            betas[0] = np.finfo(np.float32).eps
+        y = 1/np.diff(np.log(betas))
+        max_index = np.argmax(y)
+        return self._hybrid_def(max_index)
+
+
+    def _hybrid_tri(self, B, L):
+        x = B[::-1, -1]
+        y = np.mean(np.mean(L, axis=2), axis=1)[::-1]
+
+        cuad = np.diff(x) * y[:-1]
+        triang = np.diff(x) * np.diff(y)/2
+        mask = triang<=cuad
+
+        max_index = np.sum(mask)
+        return self._hybrid_def(max_index)
+
+    def _hybrid_def(self, nbetacut):
+        ba_ti = 0
+        bb_ti = nbetacut
+        ba_ss = nbetacut
+        bb_ss = self.ntemps - 1
+
+        return ba_ti, bb_ti, ba_ss, bb_ss
+
+
 
 
     def get_autocorr_time(self, **kwargs):
