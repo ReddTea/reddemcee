@@ -24,11 +24,20 @@ This code makes use of:
 `emcee` is used for calculating the autocorrelation times.
 
 # Installation
-
-In the console simply type:
+### Pip
+In the console type
 ```sh
 pip install reddemcee
 ```
+
+### From Source
+In the console type
+```sh
+git clone https://github.com/ReddTea/reddemcee
+cd reddemcee
+python -m pip install -e .
+```
+
 
 # Usage
 
@@ -95,14 +104,14 @@ Additional functions on the sampler include:
 
 | Function                          | Description                                 |
 |-----------------------------------|---------------------------------------------|
-| thermodynamic_integration_classic | Calculates evidence using trapezoidal rule. |
-| thermodynamic_integration         | Interpolates, uses Monte-Carlo integration. |
-| stepping_stones                   | Stepping Stones method                      |
-| hybrid_evidence                   | Hybrid method                               |
-| get_autocorr_time                 | Auto-correlation time.                      |
-| get_betas                         | Returns beta history                        |
-| get_chain                         | Returns chain                               |
-| get_logprob                       | Returns log posteriors                      |
+| get_evidence_ti       | Calculates evidence by Thermodynamic Integration  |
+| get_evidence_ss       | Calculates evidence by Stepping Stones            |
+| get_evidence_hybrid   | Calculates evidence by Stepping Stones            |
+| get_autocorr_time     | Auto-correlation time.                            |
+| get_betas             | Returns beta history                              |
+| get_chain             | Returns chain                                     |
+| get_log_like          | Returns log likelihoods                           |
+| get_logprob           | Returns log posteriors                            |
 
 All these functions accept as arguments:
 

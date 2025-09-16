@@ -49,6 +49,8 @@ def logprior(theta):
     for i in range(ndim_):
         if  theta[i] <= limits_[0] or limits_[1] <= theta[i]:
             return -np.inf
+        else:
+            lp += np.log(1/12)  # hard_limit
     return lp
 ```
 
@@ -56,99 +58,104 @@ And some plot utilities to visualize our results:
 
 
 ```python
-def plot_betas_ratios(sampler, setup):
-    bh = sampler.betas_history
-    rh = sampler.ratios_history
-
-    fig, axes = pl.subplots(2, 1, figsize=(9, 5), sharex=True)
-
-    bh1 = bh.reshape((setup[2], setup[0]))
-    rh1 = rh.reshape((setup[2], setup[0]-1))
-
-    for i in range(setup[0]-2):
-            bh_sel = bh1[:, i]
-            b = 1/np.array(bh_sel)
-            axes[0].plot(np.arange(setup[2])*setup[3], b)
-            axes[0].set_xscale('log')
-            axes[0].set_yscale('log')
+import matplotlib
+import matplotlib.pyplot as pl
 
 
-    for i in np.arange(setup[0]-1):
-        r = rh1[:, i]
-        axes[1].plot(np.arange(setup[2])*setup[3], r, alpha=0.5)
+def running(arr, window_size=10):
+    """Calculate running average of the last n values."""
+    averages = np.zeros_like(arr)
+    for i in range(arr.shape[0]):
+        start_idx = max(0, i - window_size + 1)  # Start of the window (avoid negative index)
+        averages[i] = np.mean(arr[start_idx:i + 1], axis=0)  # Average of the last `window_size` points
+    return averages
+
+def plot_ratios(sampler, setup, window=10):
+    betas = sampler.get_betas()
+    tsw = sampler.get_tsw()
+    smd = sampler.get_smd()
+
+    cmap = matplotlib.colormaps['plasma']
+    colors = cmap(np.linspace(0, 0.85, setup[0]))
+
+    fig, axes = pl.subplots(3, 1, figsize=(8, 6), sharex=True)
+
+    for i in range(3):
+        axes[i].axvline(x=setup[2]//2,  # burnin
+                        color='gray', linestyle='--',
+                        alpha=0.75,)
+
+    for t in range(setup[0]-1):
+        # PLOT BETAS
+        y_bet = betas[t]
+        axes[0].plot(1/y_bet, c=colors[t])
+
+        # PLOT TS_ACCEPTANCE
+        x0 = np.arange(setup[2]) * setup[3]
+        
+        y_tsw = running(tsw[:, t], window)
+        axes[1].plot(x0, y_tsw, alpha=0.75, color=colors[t])
+
+        # PLOT SWAP MEAN DISTANCE
+        y_smd = running(smd[:, t], window)
+        axes[2].plot(x0, y_smd, alpha=0.75, color=colors[t])
 
     if True:
-        axes[1].set_xlabel("N Step")
-        axes[0].set_ylabel(r"$\beta^{-1}$")
-        axes[1].set_ylabel(r"$a_{frac}$")
+        axes[0].set_ylabel(r"$T$")
+        axes[1].set_ylabel(r"$T_{swap}$")
+        axes[2].set_ylabel(r"$SMD$")
 
-    pl.tight_layout()
-    
-def plot_betas_evidence(sampler, setup, Z=0):
-    ntemps, nwalkers, nsweeps, nsteps = setup
-    likes = sampler.get_logls(flat=True)
-    
-    betas = sampler.betas_history.reshape((setup[2], setup[0])).T
-    logls = np.array([np.mean(likes[t]) for t in range(setup[0])])
-    
-    cor = ['C0', 'C1', 'C2', 'C4', 'C5', 'C7', 'C8', 'C9']
-    colors = np.array([cor,cor,cor,cor,cor]).flatten()
-    xaxis_la = r'$\beta$'
-    yaxis_la = r'$E[\log \mathcal{L}]_\beta$'
-    my_text = rf'Evidence: {np.round(Z[0], 3)} $\pm$ {np.round(Z[1], 3)}'
-    if True:
-        fig, ax = pl.subplots()
-        for ti in range(ntemps):
-            bet = betas[ti]
-            ax.plot(bet, np.ones_like(bet)*logls[ti], colors[ti], alpha=0.7)
-            ax.plot(bet[-1], logls[ti], colors[ti]+'o')
+        axes[2].set_xlabel("N Step")
 
-        ylims = ax.get_ylim()
-        
-        betas0 = [x[-1] for x in betas]
-        ax.fill_between(betas0, logls,
-                        y2=0,
-                        #color='w',
-                        alpha=0.25)
-        
-        ax.set_ylim(ylims)
-    if True:
-        ax.scatter([], [], alpha=0, label=my_text)
-        pl.legend(loc=4)
-        ax.set_xlabel(xaxis_la)
-        ax.set_ylabel(yaxis_la)
-        
-        ax.set_xlim([0, 1])
-        pl.tight_layout()
+        axes[0].set_xscale('log')
+        axes[0].set_yscale('log')
 
+    pl.subplots_adjust(hspace=0)
 ```
 
 ### Setup
 Here we write the sampler initial conditions:
-Since we are doing thermodynamic integration, we will ramp up the temperatures to 10:
+Since we are doing thermodynamic integration, we will ramp up the temperatures to 16:
 
 
 ```python
-setup = [10, 100, 300, 2]
+setup = [16, 128, 1024, 1]
 ntemps, nwalkers, nsweeps, nsteps = setup
-p0 = list(np.random.uniform(limits_[0], limits_[1], [ntemps, nwalkers, ndim_]))
+burnin = nsweeps // 2
+
+smd_const = np.repeat(np.diff(limits_), ndim_)  # normalising constant for SMD
+p0 = np.random.uniform(limits_[0], limits_[1], [ntemps, nwalkers, ndim_])
+
+# initial ladder
+my_betas = list(np.geomspace(1, 0.0001, ntemps))
+my_betas[-1] = 0
 ```
 
 ### Initiating the sampler
 
 
 ```python
-sampler = reddemcee.PTSampler(nwalkers, ndim_, loglike, logprior,
+sampler = reddemcee.PTSampler(nwalkers, ndim_,
+                              loglike, logprior,
                               ntemps=ntemps,
-                              adaptative=True,
-                              config_adaptation_halflife=300,
-                              config_adaptation_rate=0.3,
-                              config_adaptation_decay=0)
+                              adapt_tau=100,  # nsweeps/10
+                              adapt_nu=0.64,  # nwalkers/100
+                              adapt_mode=0,   # SAR
+                              betas=my_betas,
+                              backend=None,
+                              smd_history=True,  # save swap mean distance
+                              tsw_history=True,  # save temp swap rate
+                              )
     
-silent = sampler.run_mcmc(p0, nsweeps, nsteps, progress=True)
+sampler._swap_move.D_ = smd_const
+p1 = sampler.run_mcmc(p0, nsweeps=burnin, nsteps=nsteps, progress=True)
+
+sampler.select_adjustment('00')
+sampler.run_mcmc(p1, nsweeps=nsweeps-burnin, nsteps=nsteps, progress=True)
 ```
 
-    100%|████████████| 600/600 [00:09<00:00, 62.19it/s]
+    100%|████████████| 8192/8192 [00:15<00:00, 544.40it/s]
+    100%|████████████| 8192/8192 [00:15<00:00, 538.90it/s]
 
 
 ## Retrieving Results
@@ -157,7 +164,7 @@ We can examine how the temperatures behaved, and we see by eye they stabilized a
 
 
 ```python
-plot_betas_ratios(sampler, setup)
+plot_ratios(sampler, setup)
 ```
 
 
@@ -167,33 +174,84 @@ plot_betas_ratios(sampler, setup)
 
 
 #### The Evidence
-We can retrieve the results with the *thermodynamic_integration()* function. We discard the unstable samples with the keyword discard, for this showcase we will use the last 100 samples.
-This function performs thermodynamic integration as described in the emperor paper (*link*), and returns (evidence, error, discretization error, sampling error), we are interested in the first two results.
+We can retrieve the results with the *get_evidence_ti()* function. We discard the unstable samples with the keyword discard, for this showcase we will use half the chain.
+This function performs thermodynamic integration as described in the reddemcee paper (*link*), and returns (evidence, error).
 
-You can also use *thermodynamic_integration_classic()* to compare with (*Vousden's implementation*).
+You can also use *get_evidence_ti()* to compare with the stepping-stones algorithm (Xie et al. 2011).
 
-For this problem the evidence is analitically tractable (see Lartillot&Phillipe 2009): 
+We also have *get_evidence_hybrid()* as a method.
+
+For this problem the evidence is analitically tractable (see Lartillot&Phillipe 2007): 
 
 $$Z = -1.75$$
 
 
 ```python
-Z, Zerr, Zerr_d, Zerr_s = sampler.thermodynamic_integration(discard=500)
-Zc, Zcerr = sampler.thermodynamic_integration_classic(discard=500)
+rounder = 4
+Z0, Zerr0 = sampler.get_evidence_ti(discard=burnin)
+Z1, Zerr1 = sampler.get_evidence_ss(discard=burnin)
+Z2, Zerr2 = sampler.get_evidence_hybrid(discard=burnin)
 
-print(f'Evidence reddemcee: {np.round(Z,3)} +- {np.round(Zerr,3)}')
-print(f'Evidence classic  : {np.round(Zc,3)} +- {np.round(Zcerr,3)}')
+print(f'Evidence TI: {np.round(Z0,rounder)} +- {np.round(Zerr0,rounder)}')
+print(f'Evidence SS: {np.round(Z1,rounder)} +- {np.round(Zerr1,rounder)}')
+print(f'Evidence Hy: {np.round(Z2,rounder)} +- {np.round(Zerr2,rounder)}')
 ```
 
-    Evidence reddemcee: -1.823 +- 0.242
-    Evidence classic  : -2.064 +- 0.889
+    Evidence TI: -1.7679 +- 0.027
+    Evidence SS: -1.7568 +- 0.0102
+    Evidence Hy: -1.7643 +- 0.026
 
 
 A very accurate result considering the length of the chain! Furthermore, we can take a peek at how the temperatures adapted during the run (horizontal color lines) and where they ended (solid circles). The shaded area corresponds to the classic integration method, which gives some insight on what is being calculated:
 
 
 ```python
-plot_betas_evidence(sampler, setup, Z=sampler.thermodynamic_integration(discard=500))
+drop_hot_n = 2
+
+likes = sampler.get_log_like()
+betas = sampler.get_betas()[:-drop_hot_n, :]
+
+logls = likes.mean(axis=2)[:-drop_hot_n, :]
+ntemps_prime, nsweeps_prime = betas.shape
+
+L = np.cumsum(logls, axis=1)/nsweeps_prime
+
+cmap = matplotlib.colormaps['plasma']
+colors = cmap(np.linspace(0, 0.85, ntemps_prime))
+
+xaxis_la = r'$\beta$'
+yaxis_la = r'$E[\log \mathcal{L}]_\beta$'
+my_text = rf'Evidence: {Z0:.3f} $\pm$ {Zerr0:.3f}'
+
+if True:
+    fig, ax = pl.subplots(figsize=(6, 4))
+    for ti in range(ntemps_prime):
+        bet = betas[ti]
+        ax.plot(bet, L[ti],
+                c=colors[ti],
+                alpha=0.7)
+        
+        ax.plot(bet[-1], L[ti, -1],
+                c=colors[ti],
+                marker='o')
+
+    ylims = ax.get_ylim()
+        
+    betas0 = [x[-1] for x in betas]
+    ax.fill_between(betas0, L[:, -1],
+                        y2=0,
+                        #color='w',
+                        alpha=0.25)
+        
+    ax.set_ylim(ylims)
+if True:
+    ax.scatter([], [], alpha=0, label=my_text)
+    pl.legend(loc=4)
+    ax.set_xlabel(xaxis_la)
+    ax.set_ylabel(yaxis_la)
+        
+    ax.set_xlim([0, 1])
+    pl.tight_layout()
 ```
 
 

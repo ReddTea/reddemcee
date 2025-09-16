@@ -527,13 +527,13 @@ class PTSampler(LadderAdaptation):
                            smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
 
 
-    def get_evidence_ti(self, discard=0, mode='obm',
+    def get_evidence_ti(self, discard=0, thin=1, mode='obm',
                         ba=None, bb=None, pchip=True,
                         fixed_ladder=True, batch_size=None,
                         spe_kernel='bartlett'):
 
-        L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
-        B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)
+        L = self.get_log_like(discard=discard, thin=thin)  # shape=(ntemps, nsweeps, nwalkers)
+        B = self.get_betas(discard=discard, thin=thin)  # shape=(ntemps, nsweeps)
 
         from .utils import get_ti
         return get_ti(B, L,
@@ -546,7 +546,7 @@ class PTSampler(LadderAdaptation):
                       spe_kernel=spe_kernel)
 
 
-    def get_evidence_ss(self, discard=0, mode='obm',
+    def get_evidence_ss(self, discard=0, thin=1, mode='obm',
                         ba=None, bb=None, bridge=True,
                         fixed_ladder=True, batch_size=None,
                         spe_kernel='bartlett'):

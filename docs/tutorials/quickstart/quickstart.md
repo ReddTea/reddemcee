@@ -9,7 +9,7 @@ np.random.seed(1234)
 # Quickstart
 
 We will start with a simple 2D gaussian shell evaluation:
-- Widely used in the literature (vg, dynesty and multinest papers, as well as Vousden and Lartillot&Philippe 2009)
+- Widely used in the literature (vg, dynesty and multinest papers, as well as Vousden and Lartillot&Philippe 2007)
 - It is analytically tractable.
 
 ## 2D Gaussian Shell
@@ -64,6 +64,8 @@ def logprior(theta):
     for i in range(ndim_):
         if  theta[i] <= limits_[0] or limits_[1] <= theta[i]:
             return -np.inf
+        else:
+                lp += np.log(1/12)  # diff between lims
     return lp
 ```
 
@@ -74,7 +76,7 @@ Here we write the sampler initial conditions:
 ```python
 setup = [4, 100, 200, 2]
 ntemps, nwalkers, nsweeps, nsteps = setup
-p0 = list(np.random.uniform(limits_[0], limits_[1], [ntemps, nwalkers, ndim_]))
+p0 = np.random.uniform(limits[0], limits[1], [ntemps, nwalkers, ndim_])
 ```
 
 ### Initiating the sampler

@@ -342,13 +342,13 @@
    "metadata": {},
    "source": [
     "#### The Evidence\n",
-    "We can retrieve the results with the *get_evidence_ti()* function. We discard the unstable samples with the keyword discard, for this showcase we will use half the chain.\n",
-    "This function performs thermodynamic integration as described in the reddemcee paper (*link*), and returns (evidence, error).\n",
+    "We can retrieve the results with the *thermodynamic_integration()* function. We discard the unstable samples with the keyword discard, for this showcase we will use the last 100 samples.\n",
+    "This function performs thermodynamic integration as described in the emperor paper (*link*), and returns (evidence, error, discretization error, sampling error), we are interested in the first two results.\n",
     "\n",
-    "You can also use *get_evidence_ti()* to compare with the stepping-stones algorithm (Xie et al. 2011).\n",
+    "You can also use *thermodynamic_integration_classic()* to compare with (*Vousden's implementation*).\n",
     "\n",
-    "We also have *get_evidence_hybrid()* as a method.\n",
-    "For this problem the evidence is analitically tractable (see Lartillot&Phillipe 2007):\n",
+    "For this problem the evidence is analitically tractable (see Lartillot&Phillipe 2009): \n",
+    "\n",
     "$$Z = -1.75$$"
    ]
   },

@@ -57,7 +57,6 @@ The "adaptive" component refers to dynamically adjusting the temperature levels 
 - At least double the dimensions.
 - I recommend a multiple of the threads you are using to minimise idle-core time.
 - I like to scale them as an exponential of ndim.
-- You can never go wrong with more
 - More walkers means more concurrent memory usage.
 
 
@@ -65,6 +64,6 @@ The "adaptive" component refers to dynamically adjusting the temperature levels 
 [In construction!]
 
 - Really problem dependant.
-- At least 5, more than 20 seems overkill.
+- At least 6, usually 12, sometimes 16, exceptionally 24.
 
 

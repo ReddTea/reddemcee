@@ -8,7 +8,6 @@ from .state import PTState
 from .backend import PTBackend
 
 __name__ = 'reddemcee'
-__version__ = '0.9'
 __url__ = "https://reddemcee.readthedocs.io"
 
 

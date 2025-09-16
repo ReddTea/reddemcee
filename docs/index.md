@@ -4,7 +4,7 @@ Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder
 
 
 ## Overview
-`reddemcee` is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
+[`reddemcee`](https://reddemcee.readthedocs.io/en/latest) is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
 
 It's coded in such a way that minimal differences in input are required compared to emcee (v. 3.1.3).
 Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest) !
@@ -19,6 +19,7 @@ This code makes use of:
   - [`numpy`](https://numpy.org)
   - [`tqdm`](https://pypi.python.org/pypi/tqdm)
   - [`emcee`](https://github.com/dfm/emcee)
+  - scipy
 
 ### Pip
 In the console type
@@ -49,8 +50,7 @@ ndim = 2
 ntemps, nwalkers, nsweeps, nsteps = 5, 50, 100, 2
 
 ivar = 1. / np.random.rand(ndim)
-p0 = np.random.randn(ntemps, nwalkers, ndim)
-
+p0 = np.random.randn(10, nwalkers, ndim)
 sampler = reddemcee.PTSampler(nwalkers,
                              ndim,
                              log_like,
@@ -59,7 +59,7 @@ sampler = reddemcee.PTSampler(nwalkers,
                              loglargs=[ivar],
                              )
                              
-sampler.run_mcmc(p0, nsweeps, nsteps)  # starting pos, nsweeps, nsteps
+sampler.run_mcmc(p0, nsweeps, nsteps)  # starting coords, nsweeps, nsteps
 ```
 
 ## Quick Sampler Reference
@@ -79,7 +79,7 @@ When setting up `PTSampler`, you can use the arguments:
 | tsw_history | bool    | Whether to store temperature swap history.                 |
 | adapt_tau   | float   | Halflife of adaptation hyper-parameter.                    |
 | adapt_nu    | float   | Rate of adaptation hyper-paramter.                         |
-| adapt_mode  | 0-3     | Mode of adaptation.                                        |
+| adapt_mode  | 0-4     | Mode of adaptation.                                        |
 
 The adaptation modes try to equalise the following quantity:
 
@@ -89,26 +89,29 @@ The adaptation modes try to equalise the following quantity:
 | 1    | Swap Mean Distance    |
 | 2    | Specific Heat         |
 | 3    | dE/sig                |
+| 4    | Thermodynamic Length  |
 
 
 ## Additional Utilities
 Additional functions on the sampler include:
 
-| Function                          | Description                                 |
-|-----------------------------------|---------------------------------------------|
-| thermodynamic_integration_classic | Calculates evidence using trapezoidal rule. |
-| thermodynamic_integration         | Interpolates, uses Monte-Carlo integration. |
-| get_autocorr_time                 | Auto-correlation time.                      |
-| get_betas                         | Returns beta history                        |
-| get_chain                         | Returns chain                               |
-| get_logprob                       | Returns log posteriors                      |
+| Function              | Description                                       |
+|-----------------------|---------------------------------------------------|
+| get_evidence_ti       | Calculates evidence by Thermodynamic Integration  |
+| get_evidence_ss       | Calculates evidence by Stepping Stones            |
+| get_evidence_hybrid   | Calculates evidence by Stepping Stones            |
+| get_autocorr_time     | Auto-correlation time.                            |
+| get_betas             | Returns beta history                              |
+| get_chain             | Returns chain                                     |
+| get_log_like          | Returns log likelihoods                           |
+| get_logprob           | Returns log posteriors                            |
 
 All these functions accept as arguments:
 
-| Arg     | Description                       |
-|---------|-----------------------------------|
-| flat    | Flatten the walkers.              |
-| thin    | Take one every *thin* samples.    |
+| Arg     | Description                               |
+|---------|-------------------------------------------|
+| flat    | Flatten the walkers.                      |
+| thin    | Take one every *thin* samples.            |
 | discard | Drop the first *discard* steps in samples.|
 
 For example, the previous chain would have shape (5, 200, 50, 2), for
