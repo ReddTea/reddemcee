@@ -1,3 +1,4 @@
 numpy
 emcee>=3
 tqdm
+scipy

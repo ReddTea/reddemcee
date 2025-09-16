@@ -10,5 +10,4 @@ from .backend import PTBackend
 __name__ = 'reddemcee'
 __url__ = "https://reddemcee.readthedocs.io"
 
-
 __all__ = ['PTSampler', 'PTState', 'PTBackend']

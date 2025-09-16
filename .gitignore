@@ -5,9 +5,9 @@
 # Ignore egg-info
 
 dist
-reddemcee.egg-info
+reddemcee.egg-info/
 MANIFEST
-src/reddemcee.egg-info
+src/reddemcee.egg-info/
 
 # Ignore files related to API keys
 .env
@@ -29,3 +29,4 @@ __pycache__
 *.pyc
 *.so
 
+src/reddemcee.egg-info/PKG-INFO

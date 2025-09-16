@@ -3,3 +3,5 @@ exclude Private/
 exclude tests/
 exclude site/
 exclude __pycache__
+exclude reddemcee.egg-info
+exclude dist
