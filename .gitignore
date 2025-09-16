@@ -7,6 +7,7 @@
 dist
 reddemcee.egg-info
 MANIFEST
+src/reddemcee.egg-info
 
 # Ignore files related to API keys
 .env
