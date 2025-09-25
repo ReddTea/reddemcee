@@ -48,9 +48,12 @@ theme:
   features:
     - header.autohide
     # favicon: fontawesome/solid/chess-king
-  logo: img/light/logo-full-crop.svg
-  logo_dark: img/dark/logo-full-crop.svg
-  
+  logo: img/light/logo.svg
+  logo_dark: img/dark/logo.svg
+
+  #favicon: img/light/favicon.svg
+  favicon: img/dark/favicon.svg
+
   icon:
     repo: fontawesome/brands/github
   # readthedocs
