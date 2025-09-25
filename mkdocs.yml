@@ -48,6 +48,9 @@ theme:
   features:
     - header.autohide
     # favicon: fontawesome/solid/chess-king
+  logo: img/light/logo-full-crop.svg
+  logo_dark: img/dark/logo-full-crop.svg
+  
   icon:
     repo: fontawesome/brands/github
   # readthedocs
@@ -56,6 +59,7 @@ theme:
   # nav_style: primary
 
 markdown_extensions:
+  - attr_list
   - pymdownx.superfences
   - pymdownx.arithmatex:
       generic: true
