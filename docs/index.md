@@ -1,4 +1,5 @@
-# reddemcee
+# ```reddemcee```
+![svg](/docs/img/dark/Reddemce-04.svg)
 
 Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder algorithm [`EMPEROR`](https://github.com/ReddTea/astroemperor/). This sampler works as a stand-alone program, so the community might find it useful.
 
@@ -20,6 +21,9 @@ This code makes use of:
   - [`tqdm`](https://pypi.python.org/pypi/tqdm)
   - [`emcee`](https://github.com/dfm/emcee)
   - scipy
+
+`tqdm` is used to display progress bars on the terminal.
+`emcee` is used for calculating the autocorrelation times.
 
 ### Pip
 In the console type
