@@ -1,5 +1,8 @@
 # ```reddemcee```
-![svg](/docs/img/dark/Reddemce-04-cropped.svg)
+<!-- Light -->
+![reddemcee light](docs/img/light/logo-full-crop.svg#gh-light-mode-only)
+<!-- Dark -->
+![reddemcee dark](docs/img/dark/logo-full-crop.svg#gh-dark-mode-only)
 
 Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder algorithm [`EMPEROR`](https://github.com/ReddTea/astroemperor/). This sampler works as a stand-alone program, so the community might find it useful.
 
