@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reddemcee"
-version = "0.9.5"
+version = "0.9.10"
 description = "Adaptive Parallel Tempering MCMC Ensemble Sampler"
 readme = "README.md"
 license = {file="LICENSE"}

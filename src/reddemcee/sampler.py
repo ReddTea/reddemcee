@@ -550,7 +550,7 @@ class PTSampler(LadderAdaptation):
                         ba=None, bb=None, bridge=True,
                         fixed_ladder=True, batch_size=None,
                         spe_kernel='bartlett'):
-
+        
         L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
         B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)
 
@@ -622,7 +622,6 @@ class PTSampler(LadderAdaptation):
         y = 1/np.diff(np.log(betas))
         max_index = np.argmax(y)
         return self._hybrid_def(max_index)
-
 
     def _hybrid_tri(self, B, L):
         x = B[::-1, -1]
