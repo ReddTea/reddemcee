@@ -462,3 +462,5 @@ def set_temp_ladder(ntemps, ndims, temp_table=temp_table):
         tstep = 1.0 + 2.0*np.sqrt(np.log(4.0))/np.sqrt(ndims)
         
     return np.geomspace(1, tstep**(1-ntemps), ntemps)
+
+

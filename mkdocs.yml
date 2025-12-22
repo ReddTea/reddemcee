@@ -10,7 +10,7 @@ nav:
   - User Guide: user-guide/ug-README.md
   - Tutorials:
       - Introduction: tutorials/tut-README.md
-      - Quickstart: tutorials/quickstart/quickstart.md
+      - Quickstart: tutorials_ntbks/00_quickstart.ipynb
       - Fitting a model: tutorials/fitting_model/fitting_model.md
       - Temperatures & Adaptation: tutorials/temperatures/temperatures.md
       - Evidence: tutorials/evidence/evidence.md
@@ -79,6 +79,7 @@ plugins:
   - privacy
   - autorefs
   - mkdocstrings
+  - mkdocs-jupyter
 
 extra:
   analytics:

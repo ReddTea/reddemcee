@@ -54,7 +54,6 @@ class LadderAdaptation(object):
         """
         self.adjustment_fn = getattr(self, f'calc_adjust{option}')
 
-
     def calc_adjust00(self):
         # No adjustment
         return np.zeros(self.ntemps-2)
@@ -272,8 +271,8 @@ class PTSampler(LadderAdaptation):
     def sample(
         self,
         initial_state, 
-        nsteps=1,
         nsweeps=1,
+        nsteps=1,
         tune=False,
         thin_by=1,
         store=True,
@@ -283,8 +282,8 @@ class PTSampler(LadderAdaptation):
 
         Args:
             initial_state (State or ndarray[nwalkers, ndim]): The initial state of the walkers.
-            nsteps (Optional[int]): The number of steps to generate.
             nsweeps (Optional[int]): The number of sweeps to generate.
+            nsteps (Optional[int]): The number of steps to generate.
             tune (Optional[bool]): If True, tune the parameters of some moves.
             thin_by (Optional[int]): Store every `thin_by` samples.
             store (Optional[bool]): If True, store the positions and log-probabilities.
@@ -308,7 +307,7 @@ class PTSampler(LadderAdaptation):
         thin_by = int(thin_by)
         yield_step = checkpoint_step = thin_by
 
-        iterations = int(nsteps * nsweeps)
+        iterations = int(nsweeps * nsteps)
         # Store
         if store:
             self.backend.grow(nsweeps)
@@ -363,7 +362,7 @@ class PTSampler(LadderAdaptation):
                 yield state
 
 
-    def run_mcmc(self, initial_state, nsteps, nsweeps, **kwargs):
+    def run_mcmc(self, initial_state, nsweeps=1, nsteps=1, **kwargs):
         """
         Iterate :func:`sample` for ``nsweeps`` times ``nsteps`` iterations and return the result
 
@@ -388,12 +387,14 @@ class PTSampler(LadderAdaptation):
                 )
             initial_state = self._previous_state
         
+        if type(initial_state) is list:
+            initial_state = np.array(initial_state)
         #self.ntemps__ = initial_state.shape[0]
 
         results = None
         for results in self.sample(initial_state,
-                                   nsteps=nsteps,
                                    nsweeps=nsweeps,
+                                   nsteps=nsteps,
                                    **kwargs):
             pass
 
@@ -412,8 +413,8 @@ class PTSampler(LadderAdaptation):
             initial_state (State or ndarray[nwalkers, ndim]): The initial state or position vector. Can also be
                 ``None`` to resume from where :func:``run_mcmc`` left off the
                 last time it executed.
-            nsteps (int): The number of steps to run.
             nsweeps (int): The number of sweeps to run.
+            nsteps (int): The number of steps to run.
 
 
         Other parameters are directly passed to :func:`sample`.
@@ -436,8 +437,8 @@ class PTSampler(LadderAdaptation):
         act = init_steps
         while ns_ <= maxiter:
             for results in self.sample(initial_state,
-                                    nsteps=act,
                                     nsweeps=repeats,
+                                    nsteps=act,
                                     **kwargs):
                 pass
             ns_ += act
