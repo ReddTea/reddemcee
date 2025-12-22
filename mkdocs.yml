@@ -14,7 +14,7 @@ nav:
       - Quickstart: tutorials_ntbks/00_quickstart.ipynb
       - Fitting a model: tutorials_ntbks/01_fitting-data.ipynb
       - Temperatures & Adaptation: tutorials_ntbks/02_temperatures.ipynb
-      - Evidence: tutorials/evidence/evidence.md
+      - Evidence: tutorials_ntbks/03_evidence.ipynb
       - Parallelization: tutorials/parallelization/parallelization.md
       - Autocorrelation Analysis: tutorials/autocorrelation-analysis.md
       - Moves: tutorials/moves.md
