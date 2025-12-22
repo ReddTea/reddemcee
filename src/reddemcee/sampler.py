@@ -253,6 +253,9 @@ class PTSampler(LadderAdaptation):
         self.nwalkers = nwalkers
         self.ntemps = ntemps or len(betas)
 
+        if betas is not None:
+            if type(betas) is np.ndarray:
+                betas = list(betas)
         self.betas = betas or set_temp_ladder(ntemps, ndim)
 
 

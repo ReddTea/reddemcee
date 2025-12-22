@@ -10,9 +10,10 @@ nav:
   - User Guide: user-guide/ug-README.md
   - Tutorials:
       - Introduction: tutorials/tut-README.md
+      #- Quickstart: tutorials/quickstart/quickstart.md
       - Quickstart: tutorials_ntbks/00_quickstart.ipynb
       - Fitting a model: tutorials_ntbks/01_fitting-data.ipynb
-      - Temperatures & Adaptation: tutorials/temperatures/temperatures.md
+      - Temperatures & Adaptation: tutorials_ntbks/02_temperatures.ipynb
       - Evidence: tutorials/evidence/evidence.md
       - Parallelization: tutorials/parallelization/parallelization.md
       - Autocorrelation Analysis: tutorials/autocorrelation-analysis.md
@@ -79,7 +80,9 @@ plugins:
   - privacy
   - autorefs
   - mkdocstrings
-  - mkdocs-jupyter
+  - mkdocs-jupyter:
+      include_source: true
+      #execute: true
 
 extra:
   analytics:
