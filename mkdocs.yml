@@ -11,7 +11,7 @@ nav:
   - Tutorials:
       - Introduction: tutorials/tut-README.md
       - Quickstart: tutorials_ntbks/00_quickstart.ipynb
-      - Fitting a model: tutorials/fitting_model/fitting_model.md
+      - Fitting a model: tutorials_ntbks/01_fitting-data.ipynb
       - Temperatures & Adaptation: tutorials/temperatures/temperatures.md
       - Evidence: tutorials/evidence/evidence.md
       - Parallelization: tutorials/parallelization/parallelization.md

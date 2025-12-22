@@ -36,7 +36,7 @@ class LadderAdaptation(object):
         adjust[np.abs(adjust) < 1e-8] = 0   # Failsafe for very small values
         return kappa * adjust
     
-    def select_adjustment(self, option=0):
+    def select_adjustment(self, option='SAR'):
         """Select an adjustment method.
         It tries to equalize the following:
 
@@ -52,21 +52,21 @@ class LadderAdaptation(object):
         Args:
             option (int): Selects the method.
         """
-        self.adjustment_fn = getattr(self, f'calc_adjust{option}')
+        self.adjustment_fn = getattr(self, f'calc_adjust_{option}')
 
-    def calc_adjust00(self):
+    def calc_adjust_NONE(self):
         # No adjustment
         return np.zeros(self.ntemps-2)
 
-    def calc_adjust0(self):
+    def calc_adjust_SAR(self):
         # Uniform Swap Acceptance Rate
         return -np.diff(self.ts_accepted)
     
-    def calc_adjust1(self):
+    def calc_adjust_SMD(self):
         # Swap Mean Distance
         return -np.diff(self.smd)
     
-    def calc_adjust2(self):
+    def calc_adjust_SGG(self):
         # SGG
         logls = self.get_log_like(flat=True)[:, -1000:]
         db = -np.diff(self.betas)
@@ -74,9 +74,9 @@ class LadderAdaptation(object):
         a = np.exp(-varL[:-1] * db**2)
         return -np.diff(a)
 
-    def calc_adjust3(self):
+    def calc_adjust_GAO(self):
         # dE_m/sig_m; rathore et al 2005
-        # SAO
+        # GAO
         logls = self.get_log_like(flat=True)[:, -1000:]
         Esig = np.std(logls, axis=1)
         Emean = np.mean(logls, axis=1)
@@ -87,8 +87,8 @@ class LadderAdaptation(object):
         a = diffE/sigmean        
         return -np.diff(a)
 
-    def calc_adjust4(self):
-        '''THERMODYNAMIC LENGTH'''
+    def calc_adjust_ETL(self):
+        '''EQUALISED THERMODYNAMIC LENGTH'''
         betas = np.asarray(self.betas)
         logls = self.get_log_like(flat=True)[:, -1000:]
         Esig = np.std(logls, axis=1)
@@ -100,7 +100,7 @@ class LadderAdaptation(object):
 
         return np.diff(dLn)
 
-    def calc_adjust5(self):
+    def calc_adjust_5(self):
         E = np.mean(self.get_log_like(flat=True)[:, -1000:], axis=1)
         dE = np.diff(E)
         db = np.diff(self.betas)
@@ -108,7 +108,7 @@ class LadderAdaptation(object):
 
         return -np.diff(logA)
 
-    def calc_adjust6(self):
+    def calc_adjust_6(self):
         # beta density
         betas = np.asarray(self.betas)[:-1]
         #t = 1/betas[:-1]
@@ -143,7 +143,7 @@ class LadderAdaptation(object):
         #print(f'coso = {(nu_normed-cv_normed)}')
         return (nu_normed-cv_normed)
 
-    def calc_adjust7(self):
+    def calc_adjust_7(self):
         # beta density
         betas = np.asarray(self.betas)
         betamean = (betas[:-1] + betas[1:]) / 2
@@ -164,10 +164,10 @@ class LadderAdaptation(object):
         a = (nub/nub_norm)-(cvmean/cv_norm)
         return -np.diff(a)
 
-    def calc_adjust8(self):
+    def calc_adjust_8(self):
         return -np.diff(np.log(self.ts_accepted))
 
-    def calc_adjust9(self):
+    def calc_adjust_9(self):
         # beta density
         betas = np.asarray(self.betas)
         logls = self.get_log_like(flat=True)[:, -1000:]
@@ -205,7 +205,7 @@ class PTSampler(LadderAdaptation):
         tsw_history=True,
         adapt_tau=1000,
         adapt_nu=1,
-        adapt_mode=0,
+        adapt_mode='SAR',
         parameter_names: Optional[Union[Dict[str, int], List[str]]] = None,
     ):
         """Initialize the adaptive parallel tempering MCMC ensemble sampler.
