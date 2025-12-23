@@ -11,7 +11,7 @@ Adaptive Parallel Tempering MCMC Ensemble Sampler, made for the exoplanet finder
 [`reddemcee`](https://reddemcee.readthedocs.io/en/latest) is an Adaptive Parallel Tempering MCMC implementation based on the excellent [emcee](https://arxiv.org/abs/1202.3665) code, and a modified version of the [Vousden et al. implementation](https://arxiv.org/abs/1501.05823).
 
 It's coded in such a way that minimal differences in input are required compared to emcee (v. 3.1.3).
-Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest) !
+Make sure to check reddemcee's [documentation](https://reddemcee.readthedocs.io/en/latest), as this readme might not be updated.
 
 
 # Dependencies
@@ -93,13 +93,13 @@ When setting up `PTSampler`, you can use the arguments:
 
 The adaptation modes try to equalise the following quantity:
 
-| Mode | Description           |
-|------|-----------------------|
-| 0    | Temperature Swap Rate |
-| 1    | Swap Mean Distance    |
-| 2    | Specific Heat         |
-| 3    | dE/sig                |
-| 4    | Thermodynamic Length  |
+| Mode   | Description           |
+|--------|-----------------------|
+| SAR    | Uniform Swap acceptance rate |
+| SMD    | Swap Mean Distance    |
+| SGG    | Specific Heat         |
+| GAO    | dE/sig                |
+| ETL    | Thermodynamic Length  |
 
 
 # Additional Functions

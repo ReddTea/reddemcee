@@ -15,9 +15,9 @@ nav:
       - Fitting a model: tutorials_ntbks/01_fitting-data.ipynb
       - Temperatures & Adaptation: tutorials_ntbks/02_temperatures.ipynb
       - Evidence: tutorials_ntbks/03_evidence.ipynb
-      - Parallelization: tutorials/parallelization/parallelization.md
-      - Autocorrelation Analysis: tutorials/autocorrelation-analysis.md
-      - Moves: tutorials/moves.md
+      - Parallelization: tutorials_ntbks/04_parallelization.ipynb
+      - Autocorrelation Analysis: tutorials_ntbks/05_autocorrelation_analysis.ipynb
+      - Moves: tutorials_ntbks/06_moves.ipynb
   - API Reference: api.md
 
 theme:
