@@ -9,10 +9,10 @@ nav:
   - Home: index.md
   - User Guide: user-guide/ug-README.md
   - Tutorials:
-      - Introduction: tutorials/tut-README.md
+      - Introduction: tutorials_ntbks/tut-README.md
       #- Quickstart: tutorials/quickstart/quickstart.md
       - Quickstart: tutorials_ntbks/00_quickstart.ipynb
-      - Fitting a model: tutorials_ntbks/01_fitting-data.ipynb
+      - Fitting a model: tutorials_ntbks/01_fitting_data.ipynb
       - Temperatures & Adaptation: tutorials_ntbks/02_temperatures.ipynb
       - Evidence: tutorials_ntbks/03_evidence.ipynb
       - Parallelization: tutorials_ntbks/04_parallelization.ipynb

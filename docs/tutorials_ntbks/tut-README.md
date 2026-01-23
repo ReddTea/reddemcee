@@ -7,11 +7,11 @@ The following tutorials will display the similarities and differences between sa
 ---
 
 
-- [Quickstart](quickstart/quickstart.md)
-- [Fitting a model](fitting_model/fitting_model.md)
-- [Temperatures & Adaptation](temperatures/temperatures.md)
-- [Evidence](evidence/evidence.md)
-- [Parallelization](parallelization/parallelization.md)
-- [Autocorrelation Analysis](autocorrelation-analysis.md)
-- [Moves](moves.md)
+- [Quickstart](../00_quickstart)
+- [Fitting a model](../01_fitting_data)
+- [Temperatures & Adaptation](../02_temperatures)
+- [Evidence](../03_evidence)
+- [Parallelization](../04_parallelization)
+- [Autocorrelation Analysis](../05_autocorrelation_analysis)
+- [Moves](../06_moves)
 
