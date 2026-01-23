@@ -290,19 +290,28 @@ def _ss_bridge(B, L, fixed_ladder):
             logC_series[:, i] = _logmeanexp(sC, axis=1)
 
     # Convert to linear means per stone across sweeps
-    A_series = np.exp(logA_series)  # (nsweeps, m)
-    C_series = np.exp(logC_series)
-    muA = A_series.mean(axis=0)  # (m,)
-    muC = C_series.mean(axis=0)
+    # keep in log? more stable!
+    #A_series = np.exp(logA_series)  # (nsweeps, m)
+    #C_series = np.exp(logC_series)
+
+    logmuA = _logmeanexp(logA_series, axis=0)  # shape (m,)
+    logmuC = _logmeanexp(logC_series, axis=0)  # shape (m,)
     
+    shiftA = np.max(logA_series, axis=0, keepdims=True)  # (1, m)
+    shiftC = np.max(logC_series, axis=0, keepdims=True)
+
+    A_scaled = np.exp(logA_series - shiftA)  # safe: in (0, 1]
+    C_scaled = np.exp(logC_series - shiftC)
+
+    muA_scaled = A_scaled.mean(axis=0)  # corresponds to exp(logmuA - shiftA.squeeze())
+    muC_scaled = C_scaled.mean(axis=0)
+
     # Bridge estimate
-    z_hat = float(np.sum(np.log(muA) - np.log(muC)))
+    z_hat = float(np.sum(logmuA - logmuC))
     
-    W_series = np.hstack([A_series, C_series])  # (nsweeps, 2m)
+    W_series = np.hstack([A_scaled, C_scaled])  # (nsweeps, 2m)
     # grad
-    grad = np.concatenate([1.0 / muA, -1.0 / muC])  # for var
-
-
+    grad = np.concatenate([1.0 / muA_scaled, -1.0 / muC_scaled])  # for var
 
     return z_hat, W_series, grad
 

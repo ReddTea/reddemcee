@@ -247,7 +247,7 @@ typing-extensions==4.15.0
     # via
     #   beautifulsoup4
     #   referencing
-urllib3==2.3.0
+urllib3==2.6.3
     # via requests
 watchdog==6.0.0
     # via mkdocs

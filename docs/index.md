@@ -133,3 +133,34 @@ sampler.get_chain(discard=100, flat=True)
 ```
 
 Would return the samples with shape (5, 5000, 2), 'linearising' the walkers.
+
+## License and Attribution
+
+
+Copyright (c) 2024 Pablo Peña Rojas.
+
+`reddemcee` is open software under the MIT License (see [License](https://github.com/ReddTea/reddemcee/blob/main/LICENSE)).
+
+If you use `reddemcee`, please cite the paper ([arXiv](https://arxiv.org/abs/2509.24870), [ADS](https://ui.adsabs.harvard.edu/abs/2025arXiv250924870P/abstract), [SciX](https://scixplorer.org/abs/2025arXiv250924870P/abstract), [aanda](https://www.aanda.org/component/article?access=doi&doi=10.1051/0004-6361/202556609)).
+
+
+
+BibTeX:
+```
+@ARTICLE{2025arXiv250924870P,
+       author = {{Pe{\~n}a}, Pablo A. and {Jenkins}, James S.},
+        title = "{Closing the Evidence Gap: reddemcee, a Fast Adaptive Parallel Tempering Sampler}",
+      journal = {arXiv},
+     keywords = {Instrumentation and Methods for Astrophysics, Applications},
+         year = 2025,
+        month = sep,
+          eid = {arXiv:2509.24870},
+        pages = {arXiv:2509.24870},
+          doi = {10.48550/arXiv.2509.24870},
+archivePrefix = {arXiv},
+       eprint = {2509.24870},
+ primaryClass = {astro-ph.IM},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2025arXiv250924870P},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
