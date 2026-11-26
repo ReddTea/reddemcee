@@ -12,15 +12,40 @@ from copy import deepcopy
 import numpy as np
 
 
+def _copy_value(value):
+    # Avoid generic deepcopy dispatch for plain numeric arrays while retaining
+    # recursive copies for object arrays and subclass metadata.
+    if type(value) is np.ndarray and not value.dtype.hasobject:
+        return value.copy(order="K")
+    return deepcopy(value)
+
+
+def _coordinates(coords, copy):
+    if not isinstance(coords, np.ndarray) or coords.ndim < 2:
+        coords = np.atleast_2d(coords)
+    # Accepted floating-point proposals are assigned in place, so integer
+    # buffers must be promoted before any accepted proposal is written.
+    if coords.dtype.kind in "biu":
+        if copy and type(coords) is not np.ndarray:
+            coords = _copy_value(coords)
+        return coords.astype(float)
+    return _copy_value(coords) if copy else coords
+
+
 class PTState(object):
     """Parallel Tempering State that manages a list of StatePlus instances."""
 
     def __init__(self, coords, copy=False):
+        if len(coords) == 0:
+            raise ValueError("PTState requires at least one temperature")
         if hasattr(coords[0], "coords"):
             self.ntemps = len(coords)
             self.nwalkers, self.ndim = coords[0].coords.shape
             #self.random_state = coords.random_state
         else:
+            coords = np.asanyarray(coords)
+            if coords.ndim != 3:
+                raise ValueError("coords must have shape (ntemps, nwalkers, ndim)")
             self.ntemps, self.nwalkers, self.ndim = coords.shape
         
         self.random_state = None
@@ -78,17 +103,17 @@ class State(object):
     def __init__(
         self, coords, log_prob=None, log_like=None, blobs=None, beta=1, copy=False
     ):
-        dc = deepcopy if copy else lambda x: x
+        dc = _copy_value if copy else lambda x: x
 
         if hasattr(coords, "coords"):
-            self.coords = dc(coords.coords)
+            self.coords = _coordinates(coords.coords, copy)
             self.log_prob = dc(coords.log_prob)
             self.log_like = dc(coords.log_like)
             self.beta = dc(coords.beta)
             self.blobs = dc(coords.blobs)
             return
 
-        self.coords = dc(np.atleast_2d(coords))
+        self.coords = _coordinates(coords, copy)
         self.log_prob = dc(log_prob)
         self.log_like = dc(log_like)
         self.blobs = dc(blobs)
