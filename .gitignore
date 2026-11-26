@@ -30,3 +30,21 @@ __pycache__
 *.so
 
 src/reddemcee.egg-info/PKG-INFO
+
+# Keep memory and HDF regression tests visible.
+!tests/
+tests/*
+!tests/test_sampler_memory.py
+!tests/test_hdf_backend.py
+.pytest_cache/
+
+# Keep the MBAR regression tests visible to Git.
+!tests/test_mbar_*.py
+
+# Keep the sampler memory and performance port regressions visible to Git.
+!tests/conftest.py
+!tests/test_backend_capacity.py
+!tests/test_move_arrays.py
+!tests/test_probability_arrays.py
+!tests/test_state_arrays.py
+!tests/test_sampler_storage.py

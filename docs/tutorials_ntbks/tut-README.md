@@ -11,7 +11,7 @@ The following tutorials will display the similarities and differences between sa
 - [Fitting a model](../01_fitting_data)
 - [Temperatures & Adaptation](../02_temperatures)
 - [Evidence](../03_evidence)
-- [Parallelization](../04_parallelization)
+- [Parallelization and Vectorization](../04_parallelization_and_vectorization)
 - [Autocorrelation Analysis](../05_autocorrelation_analysis)
 - [Moves](../06_moves)
 

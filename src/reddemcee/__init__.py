@@ -6,8 +6,9 @@
 from .sampler import PTSampler
 from .state import PTState
 from .backend import PTBackend
+from .evidence import get_mbar
 
 __name__ = 'reddemcee'
-__version__ = '1.0'
+__version__ = '1.1'
 __url__ = "https://reddemcee.readthedocs.io"
-__all__ = ['PTSampler', 'PTState', 'PTBackend']
+__all__ = ['PTSampler', 'PTState', 'PTBackend', 'get_mbar']

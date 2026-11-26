@@ -110,13 +110,28 @@ Additional functions on the sampler include:
 | get_evidence_ti       | Calculates evidence by Thermodynamic Integration  |
 | get_evidence_ss       | Calculates evidence by Stepping Stones            |
 | get_evidence_hybrid   | Calculates evidence by Stepping Stones            |
+| get_evidence_mbar     | All-temperature MBAR normalizing-constant fit      |
 | get_autocorr_time     | Auto-correlation time.                            |
 | get_betas             | Returns beta history                              |
 | get_chain             | Returns chain                                     |
 | get_log_like          | Returns log likelihoods                           |
 | get_logprob           | Returns log posteriors                            |
 
-All these functions accept as arguments:
+Estimate log evidence from equilibrated, frozen-ladder production draws:
+
+```python
+logz, mcse, diagnostics = sampler.get_evidence_mbar(
+    discard=100, return_diagnostics=True,
+)
+```
+
+MBAR uses saved log likelihoods, requires a normalized prior and both beta=0
+and beta=1 for absolute evidence, and reports correlation-aware Monte Carlo
+uncertainty and overlap diagnostics. The [MBAR guide](docs/user-guide/evidence.md)
+shows warmup, freezing, settling, production, and standalone array input with
+`from reddemcee import get_mbar`.
+
+Sample-retrieval functions accept these arguments:
 
 | Arg     | Description                       |
 |---------|-----------------------------------|

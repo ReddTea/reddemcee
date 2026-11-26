@@ -105,13 +105,19 @@ Additional functions on the sampler include:
 | get_evidence_ti       | Calculates evidence by Thermodynamic Integration  |
 | get_evidence_ss       | Calculates evidence by Stepping Stones            |
 | get_evidence_hybrid   | Calculates evidence by Stepping Stones            |
+| [get_evidence_mbar](user-guide/evidence.md) | Combines all temperatures with MBAR; returns log evidence and MCSE. |
 | get_autocorr_time     | Auto-correlation time.                            |
 | get_betas             | Returns beta history                              |
 | get_chain             | Returns chain                                     |
 | get_log_like          | Returns log likelihoods                           |
 | get_logprob           | Returns log posteriors                            |
 
-All these functions accept as arguments:
+The [MBAR guide](user-guide/evidence.md) shows warmup, ladder freezing,
+production sampling, diagnostics, and partial normalizing-constant ratios.
+Its evidence method accepts `discard` and `thin`; use `flat` only with the
+sample-retrieval methods that support it.
+
+Sample-retrieval functions accept these arguments:
 
 | Arg     | Description                               |
 |---------|-------------------------------------------|
