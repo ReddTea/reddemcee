@@ -9,6 +9,7 @@
 # **DEL  : DELETE AT SOME POINT
 
 import numpy as np
+from emcee.moves import DEMove as _DEMove
 
 from .state import State
 
@@ -258,3 +259,18 @@ class StretchMove(RedBlueMove):
         chosen = c[rint]
         return chosen - (chosen - s) * zz[:, None], factors
 
+
+class DifferentialEvolutionMove(RedBlueMove):
+    """Use emcee's differential evolution proposal in a tempered ensemble."""
+
+    min_complement = 2
+
+    def __init__(self, sigma=1.0e-5, gamma0=None, **kwargs):
+        super().__init__(**kwargs)
+        self._move = _DEMove(sigma=sigma, gamma0=gamma0)
+
+    def setup(self, coords):
+        self._move.setup(coords)
+
+    def get_proposal(self, sample, complement, random):
+        return self._move.get_proposal(sample, [complement], random)
