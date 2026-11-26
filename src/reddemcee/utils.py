@@ -10,6 +10,9 @@
 
 import numpy as np
 
+# NumPy 2.4 removed trapz; retain compatibility with older NumPy releases.
+trapezoid = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+
 # OBM helpers
 
 def _obm_univariate(y, batch_size=None):
@@ -351,10 +354,10 @@ def get_ti(B, L, pchip=True, ba=None, bb=None, fixed_ladder=True,
         B = B[ba:bb+1, :]
         L = L[ba:bb+1, :]
 
-        z_t = np.trapz(L, B, axis=0)    # (nsweeps,)
+        z_t = trapezoid(L, B, axis=0)    # (nsweeps,)
         B2 = _coarse_rows_drop_hot(B)
         L2 = _coarse_rows_drop_hot(L)
-        z2_t = np.trapz(L2, B2, axis=0)    # (nsweeps,)
+        z2_t = trapezoid(L2, B2, axis=0)    # (nsweeps,)
 
 
     # Evidence estimate

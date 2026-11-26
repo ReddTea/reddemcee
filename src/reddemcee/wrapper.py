@@ -11,7 +11,7 @@
 import numpy as np
 
 
-        class PTWrapper_debug(object):
+class PTWrapper_debug(object):
     """
     Make logl and logp pickable
     """

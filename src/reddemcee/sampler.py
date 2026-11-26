@@ -9,8 +9,8 @@
 # **DEL  : DELETE AT SOME POINT
 
 
-from itertools import product as iter_prod
-from collections import namedtuple
+from itertools import product as iter_prod, repeat
+from collections import namedtuple, deque
 from collections.abc import Iterable
 
 from typing import Dict, List, Optional, Union
@@ -19,7 +19,7 @@ from .state import PTState
 from .moves import StretchMove, PTMove
 from .backend import PTBackend
 from .wrapper import PTWrapper
-from .utils import set_temp_ladder
+from .utils import set_temp_ladder, trapezoid
 
 from tqdm import tqdm
 import numpy as np
@@ -28,7 +28,15 @@ from emcee import autocorr
 
 class LadderAdaptation(object):
     def calc_decay(self):
-        return self.config_adaptation_halflife / (self.backend[0].iteration + self.config_adaptation_halflife)
+        return self.config_adaptation_halflife / (self._adaptation_iteration + self.config_adaptation_halflife)
+
+    def _get_recent_log_like(self):
+        if self._log_like_window is not None:
+            logls = np.array(self._log_like_window)
+            return logls.reshape(self.ntemps, -1)[:, -1000:]
+        nrecent = (1000 + self.nwalkers - 1) // self.nwalkers
+        discard = max(0, self.backend[0].iteration - nrecent)
+        return self.get_log_like(flat=True, discard=discard)[:, -1000:]
 
     def calc_dss(self):
         kappa = self.calc_decay() / self.config_adaptation_rate
@@ -56,7 +64,7 @@ class LadderAdaptation(object):
 
     def calc_adjust_NONE(self):
         # No adjustment
-        return np.zeros(self.ntemps-2)
+        return np.zeros(max(0, self.ntemps-2))
 
     def calc_adjust_SAR(self):
         # Uniform Swap Acceptance Rate
@@ -68,7 +76,7 @@ class LadderAdaptation(object):
     
     def calc_adjust_SGG(self):
         # SGG
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         db = -np.diff(self.betas)
         varL = np.var(logls, axis=1)
         a = np.exp(-varL[:-1] * db**2)
@@ -77,7 +85,7 @@ class LadderAdaptation(object):
     def calc_adjust_GAO(self):
         # dE_m/sig_m; rathore et al 2005
         # GAO
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         Esig = np.std(logls, axis=1)
         Emean = np.mean(logls, axis=1)
         sig1 = Esig[:-1]
@@ -90,18 +98,18 @@ class LadderAdaptation(object):
     def calc_adjust_ETL(self):
         '''EQUALISED THERMODYNAMIC LENGTH'''
         betas = np.asarray(self.betas)
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         Esig = np.std(logls, axis=1)
 
         dL = -np.diff(betas) * (Esig[1:] + Esig[:-1]) / 2
 
-        norm = -np.trapz(Esig, betas)/(len(betas)-1)
+        norm = -trapezoid(Esig, betas)/(len(betas)-1)
         dLn = dL/norm
 
         return np.diff(dLn)
 
     def calc_adjust_5(self):
-        E = np.mean(self.get_log_like(flat=True)[:, -1000:], axis=1)
+        E = np.mean(self._get_recent_log_like(), axis=1)
         dE = np.diff(E)
         db = np.diff(self.betas)
         logA = -dE * db
@@ -120,7 +128,7 @@ class LadderAdaptation(object):
         betamean = (betas[:-1] - betas[1:]) / (np.log(betas[:-1]) - np.log(betas[1:]))
 
         # CvL
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         #Esig = np.std(logls, axis=1)[:-1]
         Esig = np.std(logls, axis=1)[:-1]
 
@@ -150,7 +158,7 @@ class LadderAdaptation(object):
         nub = -1/np.diff(np.log(betas))
 
 
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         Esig = np.std(logls, axis=1)
         #Esigmean = (Esig[:-1] - Esig[1:]) / (np.log(Esig[:-1]) - np.log(Esig[1:]))
         Esigmean = (Esig[:-1] + Esig[1:]) / 2
@@ -170,12 +178,12 @@ class LadderAdaptation(object):
     def calc_adjust_9(self):
         # beta density
         betas = np.asarray(self.betas)
-        logls = self.get_log_like(flat=True)[:, -1000:]
+        logls = self._get_recent_log_like()
         Esig = np.std(logls, axis=1)
 
         dL = -np.diff(betas) * (Esig[1:] + Esig[:-1]) / 2
 
-        norm = -np.trapz(Esig, betas)/(len(betas)-1)
+        norm = -trapezoid(Esig, betas)/(len(betas)-1)
         dLn = dL - norm
         print(f'{dL=}')
         print(f'{dLn=}')
@@ -224,7 +232,10 @@ class PTSampler(LadderAdaptation):
             logpargs (Optional[tuple]): Positional arguments for the log-prior function.
             logpkwargs (Optional[dict]): Keyword arguments for the log-prior function.
             backend (Optional[Backend]): A backend object for storing the chain.
-            vectorize (Optional[bool]): Whether to vectorize the log-probability function.
+            vectorize (Optional[bool]): Evaluate the prior and likelihood on
+                arrays of shape (npoints, ndim), returning one value per point
+                or a scalar constant. Likelihoods skip prior-rejected points.
+                This bypasses pool and does not support parameter_names.
             blobs_dtype (Optional[dtype]): The dtype of the blobs.
             smd_history (Optional[bool]): Whether to store swap mean distance history.
             tsw_history (Optional[bool]): Whether to store temperature swap history.
@@ -313,9 +324,17 @@ class PTSampler(LadderAdaptation):
         iterations = int(nsweeps * nsteps)
         # Store
         if store:
+            self._log_like_window = None
             self.backend.grow(nsweeps)
             for t in range(self.ntemps):
                 self.backend[t].grow(iterations, state[t].blobs)
+        elif self._log_like_window is None:
+            nrecent = (1000 + self.nwalkers - 1) // self.nwalkers
+            self._log_like_window = [deque(maxlen=nrecent) for _ in range(self.ntemps)]
+            for t, backend in enumerate(self.backend):
+                if backend.iteration > 0:
+                    discard = max(0, backend.iteration - nrecent)
+                    self._log_like_window[t].extend(row.copy() for row in backend.get_log_like(discard=discard))
 
         # Set up a wrapper around the relevant model functions
         map_fn = self.pool.map if self.pool is not None else map
@@ -334,30 +353,50 @@ class PTSampler(LadderAdaptation):
                 for t in range(self.ntemps):
                     for _, _ in iter_prod(range(nsteps), range(yield_step)):
                         # Choose a random move
-                        move = self._random.choice(self._moves, p=self._weights)
+                        if len(self._moves) == 1 and self._weights[0] == 1.0:
+                            # Preserve the draw used by choice(..., p=[1.0]).
+                            self._random.random_sample()
+                            move = self._moves[0]
+                        else:
+                            index = self._random.choice(len(self._moves), p=self._weights)
+                            move = self._moves[index]
 
                         # Propose
                         state[t], accepted = move.propose(model, state[t])
-                        state.random_state = self._random.get_state()
+                        if tune:
+                            state.random_state = self._random.get_state()
 
                         if tune:
                             move.tune(state[t], accepted)
 
                         # Save the new step
-                        if store and (i + 1) % checkpoint_step == 0:
-                            self.backend[t].save_step(state[t], accepted)
+                        if (i + 1) % checkpoint_step == 0:
+                            if store:
+                                self.backend[t].save_step(state[t], accepted)
+                            else:
+                                self._log_like_window[t].append(state[t].log_like.copy())
 
                         pbar.update(1)
                         i += 1
+
+                # Persist the final proposal RNG state once per sweep. Tuning
+                # retains the per-proposal snapshots expected by custom moves.
+                if not tune:
+                    state.random_state = self._random.get_state()
 
                 # TEMPERATURE SWAP
                 state, self.ts_accepted, self.smd = swap_move.swap(state)
 
                 # TEMPERATURE LADDER ADAPTATION
+                self._adaptation_iteration += nsteps
                 state = swap_move.adapt(state, self.calc_dss())
 
                 # SAVE
-                self.backend.save_step(state, self.ts_accepted, self.smd)
+                if store:
+                    self.backend.save_step(state, self.ts_accepted, self.smd)
+                else:
+                    for t in range(self.ntemps):
+                        self._log_like_window[t][-1] = state[t].log_like.copy()
 
                 # Overwrite sampler betas, this is for user
                 self.betas = state.betas
@@ -390,8 +429,6 @@ class PTSampler(LadderAdaptation):
                 )
             initial_state = self._previous_state
         
-        if type(initial_state) is list:
-            initial_state = np.array(initial_state)
         #self.ntemps__ = initial_state.shape[0]
 
         results = None
@@ -487,32 +524,43 @@ class PTSampler(LadderAdaptation):
         p = coords
 
         # Check that the parameters are in physical ranges.
-        if np.any(np.isinf(p)):
-            raise ValueError("At least one parameter value was infinite")
-        if np.any(np.isnan(p)):
+        if not np.all(np.isfinite(p)):
+            if np.any(np.isinf(p)):
+                raise ValueError("At least one parameter value was infinite")
             raise ValueError("At least one parameter value was NaN")
 
         if self.params_are_named:
             p = ndarray_to_list_of_dicts(p, self.parameter_names)
 
-        beta_array = np.repeat(beta, len(p))
-
         if self.vectorize:
-            results = self.log_prob_fn(zip(p, beta_array))
+            log_prob, log_like = self.log_prob_fn.vectorized(p, beta)
+            blobs = None
         else:
             map_func = self.pool.map if self.pool is not None else map
-            results = list(map_func(self.log_prob_fn, zip(p, beta_array)))
+            # Keep NumPy's beta scalar dtype without allocating per walker.
+            beta_scalar = np.asarray(beta)[()]
+            results = list(map_func(self.log_prob_fn, zip(p, repeat(beta_scalar))))
 
-
-        # Unpack results
-        try:
-            # Assume results are tuples: (log_prob, log_like, *blobs)
-            log_prob = np.array([_scalar(l[0]) for l in results])
-            log_like = np.array([_scalar(l[1]) for l in results])
-            blobs = [l[2:] for l in results if len(l) > 2]
-            blobs = self._process_blobs(blobs) if blobs else None
-        except Exception as e:
-            raise ValueError(f"Error in log_prob_fn: {e}") from e
+            # Most callbacks return two scalars without blobs. Fortran order
+            # makes the two output columns contiguous without another copy.
+            values = None
+            if results:
+                try:
+                    if len(results[0]) == 2:
+                        values = np.asarray(results, dtype=float, order='F')
+                except (TypeError, ValueError, OverflowError):
+                    pass
+            if values is not None and values.shape == (len(p), 2):
+                log_prob, log_like = values.T
+                blobs = None
+            else:
+                try:
+                    log_prob = np.array([_scalar(l[0]) for l in results])
+                    log_like = np.array([_scalar(l[1]) for l in results])
+                    blobs = [l[2:] for l in results if len(l) > 2]
+                    blobs = self._process_blobs(blobs) if blobs else None
+                except Exception as e:
+                    raise ValueError(f"Error in log_prob_fn: {e}") from e
 
         if np.any(np.isnan(log_prob)):
             raise ValueError("Probability function returned NaN")
@@ -529,6 +577,9 @@ class PTSampler(LadderAdaptation):
         """
         self.backend.reset(self.ntemps, self.nwalkers, self.ndim,
                            smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
+        self._previous_state = None
+        self._log_like_window = None
+        self._adaptation_iteration = 0
 
 
     def get_evidence_ti(self, discard=0, thin=1, mode='obm',
@@ -555,8 +606,8 @@ class PTSampler(LadderAdaptation):
                         fixed_ladder=True, batch_size=None,
                         spe_kernel='bartlett'):
         
-        L = self.get_log_like(discard=discard)  # shape=(ntemps, nsweeps, nwalkers)
-        B = self.get_betas(discard=discard)  # shape=(ntemps, nsweeps)
+        L = self.get_log_like(discard=discard, thin=thin)  # shape=(ntemps, nsweeps, nwalkers)
+        B = self.get_betas(discard=discard, thin=thin)  # shape=(ntemps, nsweeps)
 
         from .utils import get_ss
         return get_ss(B, L,
@@ -564,6 +615,64 @@ class PTSampler(LadderAdaptation):
                       ba=ba, bb=bb, bridge=bridge,
                       fixed_ladder=fixed_ladder, batch_size=batch_size,
                       spe_kernel=spe_kernel)
+
+
+    def get_evidence_mbar(self, discard=0, thin=1, mode='obm',
+                          ba=None, bb=None, fixed_ladder=True,
+                          batch_size=None, spe_kernel='bartlett',
+                          allow_partial=False, return_diagnostics=False,
+                          tol=1e-10, maxiter=10000, overlap_threshold=1e-3):
+        """Combine all temperatures with MBAR on a frozen ladder.
+
+        Adapt during warmup, freeze the ladder, settle, then retain production
+        draws. Absolute evidence requires a normalized prior, finite stored
+        log likelihoods, and both beta=0 and beta=1. No new probability
+        evaluations are performed.
+
+        Args:
+            discard (int): Stored iterations to discard before estimation.
+            thin (int): Retain every ``thin``-th stored iteration, using the
+                same selection as :meth:`get_log_like` and :meth:`get_betas`.
+            mode (str): Long-run variance estimator, ``'obm'`` (overlapping
+                batch means) or ``'spe'`` (spectral/HAC).
+            ba (int or None): Inclusive lower index in ascending-beta order.
+            bb (int or None): Inclusive upper index in ascending-beta order.
+            fixed_ladder (bool): Compatibility argument. Drifting retained
+                ladders are rejected regardless of this value.
+            batch_size (int or None): OBM batch length or spectral bandwidth.
+            spe_kernel (str): Spectral kernel; defaults to ``'bartlett'``.
+            allow_partial (bool): Permit a partial ladder, returning
+                ``log Z(beta_max) - log Z(beta_min)`` instead of absolute
+                log evidence. Defaults to False.
+            return_diagnostics (bool): Also return convergence and overlap
+                diagnostics, including all fitted log normalizers.
+            tol (float): Positive numerical solver tolerance.
+            maxiter (int): Maximum MBAR solver function evaluations.
+            overlap_threshold (float): Minimum overlap spectral gap for a
+                finite MCSE. Below this threshold, warn and return infinity.
+
+        Returns:
+            tuple: ``(log_evidence, mcse)``, or
+            ``(log_evidence, mcse, diagnostics)`` when requested. The MCSE
+            accounts for ensemble, cross-temperature, and serial dependence;
+            it does not measure missed modes or incomplete equilibration.
+
+        Raises:
+            ValueError: The retained data have a changing ladder, missing
+                endpoints, fewer than three iterations, or unidentified
+                normalizing-constant differences.
+            RuntimeError: The MBAR equations fail to converge.
+
+        See :func:`reddemcee.evidence.get_mbar` for standalone array input.
+        """
+        from .evidence import get_mbar
+        return get_mbar(self.get_betas(discard=discard, thin=thin),
+                        self.get_log_like(discard=discard, thin=thin),
+                        mode=mode, ba=ba, bb=bb, fixed_ladder=fixed_ladder,
+                        batch_size=batch_size, spe_kernel=spe_kernel,
+                        allow_partial=allow_partial,
+                        return_diagnostics=return_diagnostics, tol=tol,
+                        maxiter=maxiter, overlap_threshold=overlap_threshold)
 
 
     def get_evidence_hybrid(self, discard=0, nbetacut=None,
@@ -620,7 +729,7 @@ class PTSampler(LadderAdaptation):
 
 
     def _hybrid_max(self, B):
-        betas = B[::-1, -1]
+        betas = B[::-1, -1].copy()
         if betas[0] == 0:
             betas[0] = np.finfo(np.float32).eps
         y = 1/np.diff(np.log(betas))
@@ -784,8 +893,7 @@ class PTSampler(LadderAdaptation):
 
         # Parse the APT move schedule
         self._swap_move = PTMove()
-        if tsw_history:
-            self._swap_move.tsw_hist = True
+        self._swap_move.tsw_hist = bool(tsw_history)
 
         if smd_history:
             self._swap_move.smd_hist = True
@@ -846,8 +954,9 @@ class PTSampler(LadderAdaptation):
     def _init_backend(self, backend):
 
         self.backend = PTBackend() if backend is None else backend
+        self._previous_state = None
+        self._log_like_window = None
         if not self.backend.initialized:
-            self._previous_state = None
             self.backend.reset(self.ntemps, self.nwalkers, self.ndim,
                                smd_hist=self._swap_move.smd_hist, tsw_hist=self._swap_move.tsw_hist)
 
@@ -864,7 +973,9 @@ class PTSampler(LadderAdaptation):
             it = self.backend.iteration
             if it > 0:
                 self._previous_state = self.get_last_sample()
+                self.betas = self._previous_state.betas
 
+        self._adaptation_iteration = self.backend[0].iteration
         self._random.set_state(rstate)  # MARK1
 
     def _parameter_names(self, parameter_names):
