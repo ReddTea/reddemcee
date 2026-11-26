@@ -4,6 +4,7 @@ Check the topic you are interested in.
 
 - [Installation](#installation)
 - [The APT Sampler](#apt-sampler)
+- [Evidence with MBAR](evidence.md)
 - [FAQ](#faq)
 
 ---
