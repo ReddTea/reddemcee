@@ -152,7 +152,7 @@ class HDFBackend_plus(Backend_plus):
             if name == "blobs" and not g.attrs["has_blobs"]:
                 return None
 
-            v = g[name][discard + thin - 1 : self.iteration : thin]
+            v = g[name][discard + thin - 1 : iteration : thin]
             if flat:
                 s = list(v.shape[1:])
                 s[0] = np.prod(v.shape[:2])
@@ -245,16 +245,17 @@ class HDFBackend_plus(Backend_plus):
 
 
     def swap_step(self, state):
-         with self.open("a") as f:
+        with self.open("a") as f:
             g = f[self.name]
-            #iteration = g.attrs["iteration"]
+            last = g.attrs["iteration"] - 1
 
-            g["chain"][-1, :, :] = state.coords
-            g["log_like"][-1, :] = state.log_like
-            g["log_prob"][-1, :] = state.log_prob
+            g["chain"][last, :, :] = state.coords
+            g["log_like"][last, :] = state.log_like
+            g["log_prob"][last, :] = state.log_prob
+            g["beta_history"][last] = state.beta
 
             if state.blobs is not None:
-                g["blobs"][-1, :] = state.blobs
+                g["blobs"][last, :] = state.blobs
 
 
 
@@ -270,8 +271,8 @@ class PTHDFBackend(object):
     ):
         if h5py is None:
             raise ImportError("you must install 'h5py' to use the HDFBackend")
-        self.filename = filename
-        self.filename_raw = filename.split('.')[0]
+        self.filename = os.fspath(filename)
+        self.filename_raw = os.path.splitext(self.filename)[0]
         self.name = name
         self.read_only = read_only
         self.compression = compression
@@ -283,6 +284,23 @@ class PTHDFBackend(object):
         else:
             self.dtype_set = True
             self.dtype = dtype
+
+        if self.initialized:
+            with self.open() as f:
+                self._init_backends(f[self.name].attrs["ntemps"])
+
+
+    def _init_backends(self, ntemps):
+        self.backends = [HDFBackend_plus(
+            f'{self.filename_raw}_{t}.h5', name=self.name,
+            read_only=self.read_only,
+            dtype=self.dtype if self.dtype_set else None,
+            compression=self.compression,
+            compression_opts=self.compression_opts,
+        ) for t in range(ntemps)]
+        if not self.dtype_set and self.backends and self.backends[0].initialized:
+            self.dtype = self.backends[0].dtype
+            self.dtype_set = True
 
     
     @property
@@ -305,11 +323,10 @@ class PTHDFBackend(object):
             )
         f = h5py.File(self.filename, mode)
 
-        # TODO use another attr
         if not self.dtype_set and self.name in f:
             g = f[self.name]
-            if "chain" in g:
-                self.dtype = g["chain"].dtype
+            if "dtype" in g.attrs:
+                self.dtype = np.dtype(g.attrs["dtype"])
                 self.dtype_set = True
         return f
     
@@ -333,6 +350,7 @@ class PTHDFBackend(object):
             g.attrs["ndim"] = ndim
             g.attrs["has_blobs"] = False
             g.attrs["iteration"] = 0
+            g.attrs["dtype"] = np.dtype(self.dtype).str
             g.create_dataset(
                 "ts_accepted",
                 data=np.zeros(ntemps-1),
@@ -363,7 +381,7 @@ class PTHDFBackend(object):
                     compression_opts=self.compression_opts,
                 )
 
-            self.backends = [HDFBackend_plus(f'{self.filename_raw}_{t}.h5') for t in range(ntemps)]
+            self._init_backends(ntemps)
             for backend in self.backends:
                 backend.reset(nwalkers, ndim)
 
@@ -372,13 +390,10 @@ class PTHDFBackend(object):
         with self.open("a") as f:
             g = f[self.name]
             ntot = g.attrs["iteration"] + ngrow
-            #tsw_history_bool = g["tsw_history_bool"]
-            #smd_history_bool = g["smd_history_bool"]
-
-            if self.tsw_history_bool:
+            if g.attrs["tsw_history_bool"]:
                 g["tsw_history"].resize(ntot, axis=0)
 
-            if self.smd_history_bool:
+            if g.attrs["smd_history_bool"]:
                 g["smd_history"].resize(ntot, axis=0)
 
 
@@ -408,6 +423,7 @@ class PTHDFBackend(object):
                 g["smd_history"][iteration] = smd
 
             g["ts_accepted"][:] += ts_accepted
+            self._save_random_state(g, states.random_state)
             g.attrs["iteration"] = iteration + 1
     
 
@@ -431,7 +447,17 @@ class PTHDFBackend(object):
         return self.get_value('beta_history', **kwargs)
 
     def get_value(self, name, **kwargs):
-        return np.array([b.get_value(name, **kwargs) for b in self.backends])
+        if not self.backends:
+            return np.array([])
+        v = self.backends[0].get_value(name, **kwargs)
+        if v is None:
+            return np.array([None for _ in self.backends])
+        values = np.empty((len(self.backends),) + v.shape, dtype=v.dtype)
+        values[0] = v
+        del v
+        for t, backend in enumerate(self.backends[1:], 1):
+            values[t] = backend.get_value(name, **kwargs)
+        return values
 
 
     def get_tsw(self, **kwargs):
@@ -462,7 +488,7 @@ class PTHDFBackend(object):
             if name == "blobs" and not g.attrs["has_blobs"]:
                 return None
 
-            v = g[name][discard + thin - 1 : self.iteration : thin]
+            v = g[name][discard + thin - 1 : iteration : thin]
             if flat:
                 s = list(v.shape[1:])
                 s[0] = np.prod(v.shape[:2])
@@ -492,6 +518,21 @@ class PTHDFBackend(object):
                 if k.startswith("random_state_")
             ]
         return elements if len(elements) else None
+
+
+    @random_state.setter
+    def random_state(self, state):
+        with self.open("a") as f:
+            self._save_random_state(f[self.name], state)
+
+
+    def _save_random_state(self, group, state):
+        for key in list(group.attrs):
+            if key.startswith("random_state_"):
+                del group.attrs[key]
+        if state is not None:
+            for i, value in enumerate(state):
+                group.attrs[f"random_state_{i}"] = value
 
 
     @property
@@ -536,4 +577,4 @@ class PTHDFBackend(object):
         return self
 
     def __exit__(self, exception_type, exception_value, traceback):
-        pass    
+        pass
