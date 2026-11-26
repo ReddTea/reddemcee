@@ -9,27 +9,30 @@
 # **DEL  : DELETE AT SOME POINT
 
 import numpy as np
-from copy import deepcopy
 
 from .state import State
 
 class PTMove(object):
     def __init__(self):
         self.smd_hist = False
+        self.tsw_hist = False
         self.D_ = np.array([1])
         self.inverted = False
         self.freeze = False
         
     def adapt(self, state, dSs, copy=True):
-        dc = deepcopy if copy else lambda x: x
-        
+        # Rebuilding inverse gaps can shift a frozen ladder by one ULP.
+        if not np.any(dSs):
+            return state
         ntemps, nwalkers, ndim = state.shape
-        betas = dc(state.betas)
+        previous_betas = state.betas
+        # PTState.betas is already a fresh numeric array.
+        betas = previous_betas.copy()
 
         deltaTs = np.diff(1 / betas[:-1])
         deltaTs *= np.exp(dSs)
         betas[1:-1] = 1 / (np.cumsum(deltaTs) + 1 / betas[0])
-        dbetas = betas - state.betas
+        dbetas = betas - previous_betas
 
         state.betas = betas
         for t in range(ntemps-1, 0, -1):
@@ -47,6 +50,7 @@ class PTMove(object):
         ntemps, nwalkers, ndim = state.shape
         n_swap_accept = np.zeros(ntemps-1)
         smd = np.zeros(ntemps-1) if self.smd_hist else None
+        distances = np.zeros(nwalkers) if self.smd_hist else None
         dbetas = -np.diff(betas)
 
         for t in self.beta_range(ntemps):
@@ -61,23 +65,28 @@ class PTMove(object):
             raccept = np.log(np.random.uniform(size=nwalkers))
             paccept = dbeta * (ll1 - ll2)
 
-            asel = paccept > raccept
-            n_swap_accept[t-1] = np.sum(asel)
+            asel = np.nonzero(paccept > raccept)[0]
+            naccepted = len(asel)
+            n_swap_accept[t-1] = naccepted
+            if not naccepted:
+                continue
 
             AA = state_hot.coords[asel]
             BB = state_cold.coords[asel]
             if self.smd_hist:
-                if asel.any():
-                    a_min_b = (AA-BB)/self.D_
-                    sup = np.sqrt(np.sum(np.square(a_min_b), axis=1))
-                    zeros = np.zeros(int(nwalkers-n_swap_accept[t-1]))
-                    smd[t-1] = np.mean(np.append(sup, zeros))
-                else:
-                    smd[t-1] = 0.
+                a_min_b = (AA-BB)/self.D_
+                distances[:naccepted] = np.sqrt(np.sum(np.square(a_min_b), axis=1))
+                distances[naccepted:] = 0.
+                # Preserve the previous padded reduction order exactly.
+                smd[t-1] = np.mean(distances)
 
             state_hot.coords[asel], state_cold.coords[asel] = BB, AA
             state_hot.log_prob[asel], state_cold.log_prob[asel] = state_cold.log_prob[asel] - dbeta*ll2[asel], state_hot.log_prob[asel] + dbeta*ll1[asel]
             state_hot.log_like[asel], state_cold.log_like[asel] = ll2[asel], ll1[asel]
+            if state_hot.blobs is not None:
+                state_hot.blobs[asel], state_cold.blobs[asel] = (
+                    state_cold.blobs[asel], state_hot.blobs[asel]
+                )
 
         return state, n_swap_accept/nwalkers, smd
 
@@ -110,17 +119,10 @@ class Move(object):
 
         """
         if subset is None:
-            subset = np.ones(len(old_state.coords), dtype=bool)
-
-        # integer indexing over boolean masks for better performance?
-        subset_indices = np.where(subset)[0]
-        accepted_subset = accepted[subset]
-        m1 = subset_indices[accepted_subset]
-        m2 = np.where(accepted_subset)[0]
-        '''
-        m1 = subset & accepted
-        m2 = accepted[subset]
-        '''
+            m1 = m2 = np.nonzero(accepted)[0]
+        else:
+            m2 = np.nonzero(accepted[subset])[0]
+            m1 = np.nonzero(subset)[0][m2]
         # Update the old_state with the accepted proposals
         old_state.coords[m1] = new_state.coords[m2]
         old_state.log_prob[m1] = new_state.log_prob[m2]
@@ -140,10 +142,14 @@ class Move(object):
 
 
 class RedBlueMove(Move):
+    min_complement = 1
+
     def __init__(
         self, nsplits=2, randomize_split=True, live_dangerously=False
     ):
         self.nsplits = int(nsplits)
+        if self.nsplits != nsplits or self.nsplits < 2:
+            raise ValueError("nsplits must be an integer greater than one")
         self.live_dangerously = live_dangerously
         self.randomize_split = randomize_split
 
@@ -169,6 +175,15 @@ class RedBlueMove(Move):
         """
         # Check that the dimensions are compatible.
         nwalkers, ndim = state.coords.shape
+        if nwalkers < self.nsplits:
+            raise RuntimeError("A red-blue move requires at least nsplits walkers")
+        smallest_complement = nwalkers - (nwalkers + self.nsplits - 1) // self.nsplits
+        if smallest_complement < self.min_complement:
+            raise RuntimeError(
+                "This move requires at least {} complementary walkers".format(
+                    self.min_complement
+                )
+            )
         if nwalkers < 2 * ndim and not self.live_dangerously:
             raise RuntimeError(
                 "It is unadvisable to use a red-blue move "
@@ -191,9 +206,10 @@ class RedBlueMove(Move):
         #sets = [state.coords[inds == j] for j in range(self.nsplits)]
         for split in range(self.nsplits):
             S1 = inds == split
+            subset_indices = np.nonzero(S1)[0]
 
-            s = state.coords[S1]
-            c = state.coords[~S1]
+            s = state.coords[subset_indices]
+            c = state.coords[np.nonzero(~S1)[0]]
 
             # Get the move-specific proposal.
             q, factors = self.get_proposal(s, c, model.random)
@@ -212,10 +228,10 @@ class RedBlueMove(Move):
                 if lnpdiff > np.log(model.random.rand()):
                     accepted[j] = True
             '''
-            lnpdiff = factors + new_log_probs - state.log_prob[S1]
+            lnpdiff = factors + new_log_probs - state.log_prob[subset_indices]
             u = np.log(model.random.rand(len(lnpdiff)))
             accept = lnpdiff > u
-            accepted[S1] = accept
+            accepted[subset_indices] = accept
 
             #print(f'subset = {S1.shape}; accepted = {accepted.shape}')
             #print(f'subset = {S1}; accepted = {accepted}')
@@ -239,5 +255,6 @@ class StretchMove(RedBlueMove):
         zz = ((self.a - 1.0) * random.rand(Ns) + 1) ** 2.0 / self.a
         factors = (ndim - 1.0) * np.log(zz)
         rint = random.randint(Nc, size=(Ns,))
-        return c[rint] - (c[rint] - s) * zz[:, None], factors
+        chosen = c[rint]
+        return chosen - (chosen - s) * zz[:, None], factors
 
