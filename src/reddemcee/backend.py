@@ -21,6 +21,36 @@ class PTBackend(object):
         self._list = []
         self.dtype = dtype or np.float64
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if "_history_buffers" in state:
+            # Serialize each public array once and preserve its buffer alias.
+            state["_history_buffers"] = {
+                name: state[name] for name in self._history_buffers
+            }
+            state["_history_capacity"] = max(
+                (len(history) for history in state["_history_buffers"].values()),
+                default=0,
+            )
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if "tsw_history_bool" in state:
+            # Older saved backends have public histories but no capacity data.
+            self._history_buffers = {
+                name: state[name]
+                for enabled, name in (
+                    (state["tsw_history_bool"], "tsw_history"),
+                    (state["smd_history_bool"], "smd_history"),
+                )
+                if enabled
+            }
+            self._history_capacity = max(
+                (len(history) for history in self._history_buffers.values()),
+                default=0,
+            )
+
     def reset(self, ntemps, nwalkers, ndim, smd_hist=False, tsw_hist=False):
         """Initialize the PTBackend and per-temperature backends.
 
@@ -40,10 +70,14 @@ class PTBackend(object):
         self.tsw_history_bool = tsw_hist
         self.smd_history_bool = smd_hist
 
-        if tsw_hist:
-            self.tsw_history = np.empty((0, self.ntemps-1), dtype=self.dtype)
-        if smd_hist:
-            self.smd_history = np.empty((0, self.ntemps-1), dtype=self.dtype)
+        self.tsw_history = np.empty((0, self.ntemps-1), dtype=self.dtype)
+        self.smd_history = np.empty((0, self.ntemps-1), dtype=self.dtype)
+        self._history_capacity = 0
+        self._history_buffers = {
+            name: getattr(self, name)
+            for enabled, name in ((tsw_hist, 'tsw_history'), (smd_hist, 'smd_history'))
+            if enabled
+        }
 
         self.backends = [Backend_plus(dtype=self.dtype) for _ in range(self.ntemps)]
         for backend in self.backends:
@@ -62,9 +96,15 @@ class PTBackend(object):
 
         # Save temperature swapped/adapted state
         for t, backend in enumerate(self):
-            backend.chain[-1, :, :] = states[t].coords
-            backend.log_like[-1, :] = states[t].log_like
-            backend.log_prob[-1, :] = states[t].log_prob
+            last = backend.iteration - 1
+            backend.chain[last, :, :] = states[t].coords
+            backend.log_like[last, :] = states[t].log_like
+            backend.log_prob[last, :] = states[t].log_prob
+            backend.beta_history[last] = states[t].beta
+            if backend.blobs is not None:
+                backend.blobs[last] = states[t].blobs
+
+        self.random_state = states.random_state
 
         # Handle PTBackend-specific data
         if self.tsw_history_bool:
@@ -78,13 +118,23 @@ class PTBackend(object):
 
 
     def grow(self, ngrow):
-        i = ngrow - (len(self.tsw_history) - self.iteration)
-        a = np.empty((i, self.ntemps-1), dtype=self.dtype)
-
-        if self.tsw_history_bool:
-            self.tsw_history = np.concatenate((self.tsw_history, a), axis=0)
-        if self.smd_history_bool:
-            self.smd_history = np.concatenate((self.smd_history, a), axis=0)
+        if not self._history_buffers:
+            return
+        visible = max(len(getattr(self, name)) for name in self._history_buffers)
+        required = max(visible, self.iteration + ngrow)
+        if required <= visible:
+            return
+        if required > self._history_capacity:
+            capacity = max(required, 2 * self._history_capacity)
+            for name in self._history_buffers:
+                history = getattr(self, name)
+                buffer = np.empty((capacity, self.ntemps-1), dtype=self.dtype)
+                buffer[:len(history)] = history
+                self._history_buffers[name] = buffer
+            self._history_capacity = capacity
+        # Expose only the requested reservation, even when capacity is larger.
+        for name, buffer in self._history_buffers.items():
+            setattr(self, name, buffer[:required])
 
 
     def get_autocorr_time(self, discard=0, thin=1, **kwargs):
@@ -181,6 +231,27 @@ class Backend_plus(object):
             dtype = np.float64
         self.dtype = dtype
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if "_buffers" in state:
+            # NumPy serializes views independently of their base arrays.
+            # Drop unused capacity so restored public arrays stay authoritative.
+            state["_buffers"] = {name: state[name] for name in self._buffers}
+            state["_capacity"] = len(self.chain)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if "chain" in state:
+            # Reconstruct aliases for legacy pickles and discard spare capacity.
+            self._buffers = {
+                name: state[name]
+                for name in ("chain", "log_prob", "log_like", "beta_history")
+            }
+            if state["blobs"] is not None:
+                self._buffers["blobs"] = state["blobs"]
+            self._capacity = len(self.chain)
+
 
     def reset(self, nwalkers, ndim):
         """Clear the state of the chain and empty the backend
@@ -199,6 +270,11 @@ class Backend_plus(object):
         self.log_prob = np.empty((0, self.nwalkers), dtype=self.dtype)
         self.beta_history = np.empty((0,), dtype=self.dtype)
         self.blobs = None
+        self._capacity = 0
+        self._buffers = {
+            name: getattr(self, name)
+            for name in ("chain", "log_prob", "log_like", "beta_history")
+        }
         self.random_state = None
         self.initialized = True
 
@@ -264,6 +340,7 @@ class Backend_plus(object):
             log_like=self.get_log_like(discard=it - 1)[0],
             beta=self.get_betas(discard=it - 1)[0],
             blobs=blobs,
+            copy=True,
         )
 
 
@@ -340,29 +417,25 @@ class Backend_plus(object):
                 dtype for the blobs array.
 
         """
-        i = ngrow - (len(self.chain) - self.iteration)
-        if i > 0:
-            self._check_blobs(blobs)
-            a = np.empty((i, self.nwalkers, self.ndim), dtype=self.dtype)
-            self.chain = np.concatenate((self.chain, a), axis=0)
-
-            a = np.empty((i, self.nwalkers), dtype=self.dtype)
-            self.log_prob = np.concatenate((self.log_prob, a), axis=0)
-            
-            a = np.empty((i, self.nwalkers), dtype=self.dtype)
-            self.log_like = np.concatenate((self.log_like, a), axis=0)
-
-            a = np.empty((i), dtype=self.dtype)
-            self.beta_history = np.concatenate((self.beta_history, a), axis=0)
-        
-
-            if blobs is not None:
-                dt = np.dtype((blobs.dtype, blobs.shape[1:]))
-                a = np.empty((i, self.nwalkers), dtype=dt)
-                if self.blobs is None:
-                    self.blobs = a
-                else:
-                    self.blobs = np.concatenate((self.blobs, a), axis=0)
+        self._check_blobs(blobs)
+        required = max(len(self.chain), self.iteration + ngrow)
+        add_blobs = blobs is not None and self.blobs is None
+        if required <= len(self.chain) and not add_blobs:
+            return
+        if required > self._capacity:
+            capacity = max(required, 2 * self._capacity)
+            for name in self._buffers:
+                current = getattr(self, name)
+                buffer = np.empty((capacity,) + current.shape[1:], dtype=current.dtype)
+                buffer[:len(current)] = current
+                self._buffers[name] = buffer
+            self._capacity = capacity
+        if add_blobs:
+            dt = np.dtype((blobs.dtype, blobs.shape[1:]))
+            self._buffers["blobs"] = np.empty((self._capacity, self.nwalkers), dtype=dt)
+        # Preserve public lengths while amortizing repeated small extensions.
+        for name, buffer in self._buffers.items():
+            setattr(self, name, buffer[:required])
 
     def _check(self, state, accepted):
         self._check_blobs(state.blobs)
